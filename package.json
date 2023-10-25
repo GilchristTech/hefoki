@@ -1,0 +1,15 @@
+{
+  "name": "hefoki",
+  "version": "1.0.0",
+  "description": "Headlines extracted from Wikipedia",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "Gilchrist Pitts",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12"
+  },
+  "devDependencies": {}
+}
