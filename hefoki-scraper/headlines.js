@@ -1,4 +1,5 @@
-const cheerio = require("cheerio");
+import Cheerio from "cheerio";
+import Fs      from "fs";
 
 
 class EventPortalParseNode {
@@ -153,8 +154,8 @@ function processCurrentEventDOM ($, item, parent=null) {
 }
 
 
-function parseHeadlinesFromHtml (html) {
-  const $ = cheerio.load(html);
+export function parseHeadlinesFromHtml (html) {
+  const $ = Cheerio.load(html);
 
   const current_event_day_containers = $('.current-events-main.vevent');
 
@@ -193,7 +194,7 @@ function parseHeadlinesFromHtml (html) {
 }
 
 
-async function fetchHeadlines (url=null) {
+export async function fetchHeadlines (url=null) {
   if (url === null) {
     url = "https://en.wikipedia.org/wiki/Portal:Current_events";
   }
@@ -211,7 +212,7 @@ async function fetchHeadlines (url=null) {
 }
 
 
-module.exports = {
-  parseHeadlinesFromHtml,
-  fetchHeadlines,
-};
+export function parseHeadlinesFromFile (file) {
+  const html = Fs.readFileSync(file);
+  return parseHeadlinesFromHtml(html);
+}

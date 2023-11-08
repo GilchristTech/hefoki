@@ -1,13 +1,20 @@
 {
-  "name": "hefoki",
+  "name": "hefoki-scraper",
   "version": "1.0.0",
   "description": "Headlines extracted from Wikipedia",
-  "main": "index.js",
+  "type": "module",
+  "main": "headlines.js",
   "scripts": {
     "start": "node index.js"
   },
   "keywords": [],
   "author": "Gilchrist Pitts",
+  "exports": {
+    "./headlines": {
+      "require": "./headlines.js",
+      "import":  "./headlines.js"
+    }
+  },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12"
   },
