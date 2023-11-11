@@ -1,0 +1,19 @@
+{
+  "name": "hefoki-database",
+  "version": "1.0.0",
+  "description": "The Hefoki backend contains application code to",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "exports": {
+    ".": "./headlines-interface.js",
+    "./dynamodb": "./dynamodb.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.449.0"
+  }
+}

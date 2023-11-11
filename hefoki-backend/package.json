@@ -11,6 +11,9 @@
   "author": "Gilchrist Pitts",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.445.0",
+    "dotenv": "^16.3.1",
+    "hefoki-database": "file:../hefoki-database",
     "hefoki-scraper": "file:../hefoki-scraper"
   }
 }
