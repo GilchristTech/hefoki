@@ -42,7 +42,7 @@ export function headlinesMatchExternalLinks (headlines_a, headlines_b) {
 
         for (let external_link of external_a) {
           if (external_b.indexOf(external_link) != -1) {
-            matched.push(headline_b);
+            matched.push([headline_a, headline_b]);
             delete headlines_a[headline_ai];
             continue LOOP_B;
           }
@@ -86,7 +86,7 @@ export function headlinesMatchExact (headlines_a, headlines_b) {
       const headline_a = headlines_a[headline_ai];
 
       if (deepEqual(headline_a, headline_b)) {
-        matched.push(headline_b);
+        matched.push([headline_a, headline_b]);
         delete headlines_a[headline_ai];
         continue LOOP_B;
       }
@@ -128,7 +128,7 @@ export function headlinesMatchTextExact (headlines_a, headlines_b) {
       const headline_a = headlines_a[headline_ai];
 
       if (headline_a.text == headline_b.text) {
-        matched.push(headline_b);
+        matched.push([headline_a, headline_b]);
         delete headlines_a[headline_ai];
         continue LOOP_B;
       }
@@ -185,4 +185,29 @@ export function reduceHeadlineMatchers (matchers, headlines_a, headlines_b) {
     unmatched_a,
     unmatched_b
   };
+}
+
+
+export function matchHeadlines (headlines_a, headlines_b) {
+  // Monadic, with superset of the monadic
+
+  const matchers = [
+    [ "exact",          headlinesMatchExact         ],
+    [ "text_exact",     headlinesMatchTextExact     ],
+    [ "external_links", headlinesMatchExternalLinks ],
+  ];
+
+  const match = reduceHeadlineMatchers(
+    matchers.map( m => m[1] ),
+    headlines_a, headlines_b
+  );
+
+  // Re-index matcher_matched from ints to name strings for each matcher
+  const new_matchers_matched = {};
+  for (let i in matcher.matcher_results) {
+    new_matchers_matched[matchers[i][0]] = match.matchers_matched[i];
+  }
+  matcher.matchers_matched = new_matchers_matched;
+
+  return match;
 }

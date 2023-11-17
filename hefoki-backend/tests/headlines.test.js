@@ -18,7 +18,7 @@ describe("headlinesMatchExternalLinks", () => {
 
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
-    expect(match.matched    ).toEqual(headlines_b);
+    expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
   });
 
   it("Matches single-headline sets with subset of external links", () => {
@@ -41,7 +41,7 @@ describe("headlinesMatchExternalLinks", () => {
 
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
-    expect(match.matched    ).toEqual(headlines_b);
+    expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
   });
 
   it("Doesn't match single-headline sets with no external links", () => {
@@ -95,8 +95,8 @@ describe("headlinesMatchExternalLinks", () => {
     ]);
 
     expect(match.matched).toEqual([
-      { ...headlines_array[1] },
-      { ...headlines_array[2] }
+      [{ ...headlines_array[1] }, { ...headlines_array[1] }],
+      [{ ...headlines_array[2] }, { ...headlines_array[2] }],
     ]);
   });
 });
@@ -111,7 +111,7 @@ describe("headlinesMatchExact", () => {
 
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
-    expect(match.matched    ).toEqual(headlines_b);
+    expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
   });
 
   it("Doesn't match single-headline sets with a modified attribute", () => {
@@ -143,7 +143,7 @@ describe("headlinesMatchTextExact", () => {
 
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
-    expect(match.matched    ).toEqual(headlines_b);
+    expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
   });
 
   it("Doesn't match single-headline sets with a modified text", () => {
@@ -175,9 +175,9 @@ describe("reduceHeadlineMatchers", () => {
 
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
-    expect(match.matched    ).toEqual(headlines_b);
+    expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
     expect(match.matchers_matched).toEqual([
-      [ headlines_array[0] ]
+      [ [headlines_array[0], headlines_array[0]] ]
     ]);
   });
 
@@ -199,14 +199,14 @@ describe("reduceHeadlineMatchers", () => {
 
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
-    expect(match.matched    ).toEqual(headlines_b);
+    expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
 
     expect(matcher_1_ran).toBe(true);
     expect(matcher_2_ran).toBe(false);
     expect(matcher_2_ran).toBe(false);
 
     expect(match.matchers_matched).toEqual([
-      [ headlines_array[0] ], [], []
+      [ [headlines_array[0], headlines_array[0]] ], [], []
     ]);
   });
 
@@ -228,14 +228,14 @@ describe("reduceHeadlineMatchers", () => {
 
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
-    expect(match.matched    ).toEqual(headlines_b);
+    expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
 
     expect(matcher_1_ran).toBe(true);
     expect(matcher_2_ran).toBe(false);
-    expect(matcher_2_ran).toBe(false);
+    expect(matcher_3_ran).toBe(false);
 
     expect(match.matchers_matched).toEqual([
-      [ headlines_array[0] ], [], []
+      [ [headlines_array[0], headlines_array[0]] ], [], []
     ]);
   });
 
@@ -258,9 +258,9 @@ describe("reduceHeadlineMatchers", () => {
       headlines_a, headlines_b
     );
 
-    expect( match.matched          ).toEqual( [ headlines_b[0], headlines_b[1] ] );
+    expect( match.matched          ).toEqual( [ [headlines_a[0], headlines_b[0]], [headlines_a[1], headlines_b[1]] ]);
     expect( match.unmatched_a      ).toEqual( [ headlines_a[2]] );
     expect( match.unmatched_b      ).toEqual( [ headlines_b[2]] );
-    expect( match.matchers_matched ).toEqual( [ [headlines_b[0]], [headlines_b[1]] ]);
+    expect( match.matchers_matched ).toEqual( [ [[headlines_a[0], headlines_b[0]]], [[headlines_a[1], headlines_b[1]]] ]);
   });
 });
