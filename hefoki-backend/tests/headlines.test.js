@@ -100,3 +100,65 @@ describe("headlinesMatchExternalLinks", () => {
     ]);
   });
 });
+
+
+describe("headlinesMatchExact", () => {
+  it("Matches single-headline sets which are equal", () => {
+    const headlines_a = [{ ...headlines_array[0] }];
+    const headlines_b = [{ ...headlines_array[0] }];
+
+    const match = Headlines.headlinesMatchExact(headlines_a, headlines_b);
+
+    expect(match.unmatched_a).toEqual([]);
+    expect(match.unmatched_b).toEqual([]);
+    expect(match.matched    ).toEqual(headlines_b);
+  });
+
+  it("Doesn't match single-headline sets with a modified attribute", () => {
+    const headlines_a = [{ ...headlines_array[0] }];
+    const headlines_b = [{ ...headlines_array[0] }];
+
+    headlines_b[0].text += "!!!";
+
+    const match = Headlines.headlinesMatchExact(headlines_a, headlines_b);
+
+    expect(match.unmatched_a).toEqual([{ ...headlines_array[0] }]);
+    expect(match.unmatched_b).toEqual([{
+      ...headlines_array[0],
+      text: headlines_array[0].text + "!!!"
+    }]);
+    expect(match.matched    ).toEqual([]);
+  });
+});
+
+
+describe("headlinesMatchTextExact", () => {
+  it("Matches single-headline sets with equal text, unequal external links", () => {
+    const headlines_a = [{ ...headlines_array[0] }];
+    const headlines_b = [{ ...headlines_array[0] }];
+
+    headlines_b[0].external_links = [];
+
+    const match = Headlines.headlinesMatchTextExact(headlines_a, headlines_b);
+
+    expect(match.unmatched_a).toEqual([]);
+    expect(match.unmatched_b).toEqual([]);
+    expect(match.matched    ).toEqual(headlines_b);
+  });
+
+  it("Doesn't match single-headline sets with a modified text", () => {
+    const headlines_a = [{ ...headlines_array[0] }];
+    const headlines_b = [{ ...headlines_array[0] }];
+
+    headlines_b[0].text += "!!!";
+
+    const match = Headlines.headlinesMatchTextExact(headlines_a, headlines_b);
+
+    expect(match.unmatched_a).toEqual([{ ...headlines_array[0] }]);
+    expect(match.unmatched_b).toEqual([{
+      ...headlines_array[0],
+      text: headlines_array[0].text + "!!!"
+    }]);
+    expect(match.matched    ).toEqual([]);
+  });
+});
