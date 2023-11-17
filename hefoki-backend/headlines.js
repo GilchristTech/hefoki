@@ -153,3 +153,36 @@ export function headlinesMatchTextExact (headlines_a, headlines_b) {
     unmatched_b,
   };
 }
+
+
+export function reduceHeadlineMatchers (matchers, headlines_a, headlines_b) {
+  // Monadic function, with superset of the monadic type
+
+  const matchers_matched = Array(matchers.length);
+  let   matched          = [];
+  let   unmatched_a      = headlines_a;
+  let   unmatched_b      = headlines_b;
+
+  for (let matcher_i in matchers) {
+    let match;
+
+    if (unmatched_a.length == 0 || unmatched_b.length.length == 0) {
+      matchers_matched[matcher_i] = [];
+      continue;
+    }
+
+    match = matchers[matcher_i](unmatched_a, unmatched_b);
+
+    matchers_matched[matcher_i] = match.matched;
+    matched                     = matched.concat(match.matched);
+    unmatched_a                 = match.unmatched_a;
+    unmatched_b                 = match.unmatched_b;
+  }
+
+  return {
+    matched,
+    matchers_matched,
+    unmatched_a,
+    unmatched_b
+  };
+}
