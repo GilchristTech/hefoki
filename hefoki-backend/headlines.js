@@ -188,8 +188,14 @@ export function reduceHeadlineMatchers (matchers, headlines_a, headlines_b) {
 }
 
 
-export function matchHeadlines (headlines_a, headlines_b) {
-  // Monadic, with superset of the monadic
+export function diffHeadlines (headlines_a, headlines_b) {
+  /*
+    Given two arrays of headlines, return an object containing arrays of
+    unmodified, modified, added, and deleted headlines, named respectively.
+    Each attribute is an array of headline objects, except for "modified",
+    which an array of two-length arrays, each containing two headlines from
+    that matched headline pair.
+  */
 
   const matchers = [
     [ "exact",          headlinesMatchExact         ],
@@ -204,10 +210,59 @@ export function matchHeadlines (headlines_a, headlines_b) {
 
   // Re-index matcher_matched from ints to name strings for each matcher
   const new_matchers_matched = {};
-  for (let i in matcher.matcher_results) {
+  for (let i in match.matchers_matched) {
     new_matchers_matched[matchers[i][0]] = match.matchers_matched[i];
   }
-  matcher.matchers_matched = new_matchers_matched;
+  match.matchers_matched = new_matchers_matched;
 
-  return match;
+  const unmodified = match.matchers_matched.exact;
+  const deleted    = match.unmatched_a;
+  const added      = match.unmatched_b;
+  let   updated    = [];
+
+  for (let [matcher, _] of matchers.slice(1)) {
+    updated = updated.concat(match.matchers_matched[matcher]);
+  }
+
+  return {
+    unmodified,
+    deleted,
+    added,
+    updated
+  };
+}
+
+
+export function diffHeadlineDays (headline_days_a, headline_days_b) {
+  /*
+    For each headline day in headline_days_b which is also in headline_days_a,
+    return an object mapping those dates to headline day diff objects.
+  */
+
+  const headline_day_diffs = {};
+
+  const dates = Object.keys(headline_days_b);
+
+  for (let date of dates) {
+    const headlines_old = headline_days_a[date] ?? [];
+    const headlines_new = headline_days_b[date];
+
+    headline_day_diffs[date] = diffHeadlines(headlines_old, headlines_new);
+  }
+
+  return headline_day_diffs;
+}
+
+
+export function headlineDayDiffsToHeadlineDays (headline_day_diffs) {
+  const headline_days = {};
+
+  for (let [date, diff] of Object.entries(headline_day_diffs)) {
+    headline_days[date] = diff.unmodified.concat(
+      diff.updated.map(hp => hp[1]),
+      diff.added
+    );
+  }
+
+  return headline_days;
 }
