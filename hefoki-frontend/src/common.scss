@@ -1,0 +1,90 @@
+#site-header {
+  background:   #343;
+  color:        #efd;
+  padding:   0.68rem;
+  font-size:  1.18em;
+  box-shadow: 0 -1px 16px 1px #0004;
+  
+  .brand {
+    letter-spacing: 2px;
+  }
+  
+  :is(a, a:visited) {
+    color: inherit;
+    text-decoration: none;
+  }
+}
+
+#site-footer {
+  background: #343;
+  color:      #efd;
+  padding:     2em;
+
+  a {
+    color: #4ef;
+    &:visited { color: #6ff; }
+  }
+}
+
+ul.headlines {
+  padding: 0;
+  display: flex;
+  flex-flow: row wrap;
+  justify-content: center;
+  gap: 1em;
+
+  .external-sources {
+    font-size: 0.85em;
+  }
+
+  & > li.headline {
+    list-style: none;
+    @media (min-width: 800px) {
+      flex-basis: 35ch;
+    }
+  }
+}
+
+.headline {
+  &.panel {
+    border: 1px solid #8cf;
+    padding: 0.5em 0.6em;
+    background: white;
+    box-shadow:
+      2px 4px 0px #4441,
+      0px 10px 12px 1px #3733;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+:is(.headline-days, .headline-day, .headlines) nav,
+nav:is(.headlines, nav.headline-days)
+{
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  align-items: center;
+  padding: 0 min(4em, 5%);
+
+  &:first-child {
+    border-bottom: 1px solid green;
+    h1 {
+      margin-right: 10%;
+    }
+  }
+
+  a {
+    display: block;
+    border: 2px solid #040;
+    padding: 0.35em;
+    &, &:visited {
+      color: white;
+      text-decoration: none;
+    }
+    background: #263;
+    border-radius: 2px;
+  }
+}

@@ -1,0 +1,46 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{% if title %}{{ title + " — "}}{% endif %}Hefoki</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/common.css">
+
+    <style>
+      *, *::before, *::after { box-sizing: inherit }
+
+      body {
+        margin:         0;
+        box-sizing:     border-box;
+        font-family:    sans-serif;
+        display:        flex;
+        min-height:     100vh;
+        flex-direction: column;
+        background:     #f9f9f8;
+        color:          #231;
+      }
+
+      body > main { flex-grow: 1 }
+    </style>
+
+    <title>{pageTitle}</title>
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <header id="site-header">
+      <a class="brand" href="/">Hefoki</a>
+    </header>
+    <main>
+      {% block main %}
+        {{ templateContent | safe }}
+      {% endblock %}
+    </main>
+    <footer id="site-footer">
+      <div class="credits">
+        <p>Developed by <a target="_blank" href="https://gilchrist.tech/">Gilchrist Pitts</a></p>
+        <p><a target="_blank" href="https://github.com/GilchristTech/hefoki">Github Repo</a></p>
+        <p>Content sourced from <a target="_blank" href="https://www.wikipedia.org/">Wikipedia</a></p>
+      </div>
+    </footer>
+  </body>
+</html>

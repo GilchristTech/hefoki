@@ -1,0 +1,19 @@
+{% macro headlineContent (headline) %}
+  <p>{{ headline.text }}</p>
+  <ul class="external-sources">
+  {%- for external_link in headline.external_links -%}
+    <li><a target="_blank" href="{{ external_link }}">{{ external_link }}</a></li>
+  {%- endfor -%}
+  </ul>
+{% endmacro %}
+
+
+{% macro headlinesList (headlines) %}
+  <ul class="headlines">
+  {%- for headline in headlines -%}
+    <li class="headline panel">
+      {{ headlineContent(headline) | safe }}
+    </li>
+  {%- endfor -%}
+  </ul>
+{% endmacro %}

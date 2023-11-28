@@ -1,0 +1,43 @@
+---
+pagination:
+  data:  headline_days
+  size:  1
+  alias: headline_day
+permalink: "/{{ headline_day.date | slugify }}/"
+eleventyComputed:
+  title: "{{ headline_day.date }}"
+---
+
+{% extends "base.njk" %}
+
+{% block head %}
+  <style>
+    main {
+      padding: 1em;
+    }
+
+    pre {
+      word-wrap: wrap;
+      background: #002;
+      color: white;
+      padding: 0.5em;
+      border-radius: 3px;
+    }
+  </style>
+{% endblock %}
+
+{% block main %}
+  <nav class="headline-days">
+    <a class="prev" href="/{{ headline_day.yesterday_date }}">Previous</a>
+    <h1>{{ headline_day.date }}</h1>
+    <a class="next" href="{{ pagination.href.next }}">Next</a>
+  </nav>
+
+  {% from 'components/headlines.njk' import headlinesList %}
+  {{ headlinesList(headline_day.headlines) | safe }}
+
+  <nav class="headline-days">
+    <a class="prev" href="/{{ headline_day.yesterday_date }}">Previous</a>
+    <a class="next" href="{{ pagination.href.next }}">Next</a>
+  </nav>
+{% endblock %}

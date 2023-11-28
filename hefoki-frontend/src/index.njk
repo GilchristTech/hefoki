@@ -1,0 +1,84 @@
+---
+title: Today
+---
+
+{% extends "base.njk" %}
+
+{% block head %}
+  <style>
+    main {
+      display: flex;
+      flex-direction: column;
+    }
+
+    section {
+      padding: 1em;
+    }
+
+    section:last-child {
+      margin-top: auto;
+    }
+
+    p {
+      max-width: 80ch;
+    }
+    
+    #about {
+      background:   #25a;
+      color:        #fff;
+      padding-left:   4%;
+    }
+
+    #about a {
+      color: #ff0;
+    }
+
+    #about a:visited {
+      color: #ff4;
+    }
+  </style>
+{% endblock %}
+
+{% block main %}
+  <main>
+    <section id="news-highlight headlines">
+      {# Get the most recent headline day in the build, then render it #}
+
+      {% from 'components/headlines.njk' import headlinesList %}
+      {% set headlines_today = headline_days
+        | search("sort_by([], &date)[-1]")
+      %}
+
+      <h1><a href="/{{ headlines_today.date }}">Stories from today</a></h1>
+      <p>{{ headlines_today.date }}</p>
+      {{ headlinesList(headlines_today.headlines) | safe }}
+
+      <nav class="headlines">
+        <a class="prev" href="{{ headlines_today.yesterday_date }}">Previous Day</a>
+      </nav>
+    </section>
+
+    <section id="about">
+      <h2>About Hefoki</h2>
+      <p>
+        The <a href="https://en.wikipedia.org/wiki/Portal:Current_events" target="_blank">Wikipedia Current Events Portal</a>
+        is a valuable, concise resource for discovering news stories. Headlines
+        Extracted From Wikipedia, or Hefoki for short, is an alternative
+        presentation and a mirror of these stories.
+      </p>
+
+      <p>If this project is useful to you, please consider
+        <a href="https://donate.wikimedia.org/" target="_blank">donating to Wikipedia (Wikimedia Foundation)</a>.
+      </p>
+
+      <h3>Technical stuff</h3>
+      <p>
+        Hefoki is open-source, and its codebase can be found on <a href="https://github.com/GilchristTech/hefoki">on GitHub</a>.
+        It runs on NodeJS, and is made to be deployed on AWS.
+      </p>
+
+      <h3>About the developer</h3>
+      <p>Hefoki is developed by <a href="https://gilchrist.tech/" target="_blank">Gilchrist Pitts</a>.</p>
+    </section>
+  </main>
+{% endblock %}
