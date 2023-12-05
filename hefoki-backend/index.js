@@ -1,12 +1,14 @@
 import { fetchHeadlines }         from 'hefoki-scraper/headlines';
 import HeadlinesInterfaceDynamoDB from 'hefoki-database/dynamodb';
+import hefokiFrontendBuild        from 'hefoki-frontend';
+
 import * as Headlines             from './headlines.js';
 
 import Fs from 'fs';
 
 import 'dotenv/config';
 
-(async () => {
+async function runUpdateHeadlines () {
   /*
     Fetch headlines from the Current Events Portal, compare with headlines
     already in DynamoDB, then update headline days in the database where
@@ -35,4 +37,10 @@ import 'dotenv/config';
   headlines_interface.updateHeadlineDays(
       headline_day_updates
     );
+
+  return headline_day_updates;
+}
+
+(async () => {
+  // runHeadlineDayUpdates();
 })();

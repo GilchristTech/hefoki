@@ -8,3 +8,15 @@ To build, run
 ```bash
 npm run build
 ```
+
+To build programmatically, the frontend can be imported as a module, providing
+a default export of an async build function.
+```javascript
+// CommonJS
+const hefokiFrontendBuild = require("hefoki-frontend");
+
+// ES6
+import hefokiFrontendBuild from "hefoki-frontend";
+
+await hefokiFrontendBuild("./build_destination/")
+```

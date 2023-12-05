@@ -10,7 +10,15 @@ with any included wiki links.
 
 Location: `./hefoki-backend/`
 
-Contains application logic.
+The Hefoki Backend module connects other isolated Hefoki NodeJS modules,
+orchestrates high-level logic and scraping, and manages static site deployment.
+
+## [Frontend](https://github.com/GilchristTech/hefoki/tree/master/hefoki-frontend)
+
+Location: `./hefoki-frontend/`
+
+Hefoki is an incrementally-deployed static site. This module contains the frontend
+generation code.
 
 ## [Scraper](https://github.com/GilchristTech/hefoki/tree/master/hefoki-scraper)
 

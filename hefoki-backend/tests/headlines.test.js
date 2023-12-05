@@ -15,7 +15,6 @@ describe("headlinesMatchExternalLinks", () => {
       "matched", "unmatched_a", "unmatched_b"
     ]);
 
-
     expect(match.unmatched_a).toEqual([]);
     expect(match.unmatched_b).toEqual([]);
     expect(match.matched    ).toEqual([ [headlines_a[0], headlines_b[0]] ]);
