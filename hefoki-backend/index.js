@@ -1,6 +1,6 @@
-import { fetchHeadlines }         from 'hefoki-scraper/headlines';
-import HeadlinesInterfaceDynamoDB from 'hefoki-database/dynamodb';
-import hefokiFrontendBuild        from 'hefoki-frontend';
+import { fetchHeadlines }         from '@hefoki/scraper/headlines';
+import HeadlinesInterfaceDynamoDB from '@hefoki/database/dynamodb';
+import hefokiFrontendBuild        from '@hefoki/frontend';
 
 import * as Headlines             from './headlines.js';
 
@@ -42,5 +42,5 @@ async function runUpdateHeadlines () {
 }
 
 (async () => {
-  // runHeadlineDayUpdates();
+  runUpdateHeadlines();
 })();

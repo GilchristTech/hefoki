@@ -1,7 +1,8 @@
-import hefokiFrontendBuild from 'hefoki-frontend';
+import hefokiFrontendBuild from '@hefoki/frontend';
 
 import { rimraf } from 'rimraf';
-import cheerio    from 'cheerio';
+import Mime       from 'mime-types';
+import Cheerio    from 'cheerio';
 import * as Luxon from 'luxon';
 import Crypto     from 'crypto';
 import Path       from 'path';
@@ -13,76 +14,269 @@ import {
   ListObjectsV2Command
 } from '@aws-sdk/client-s3';
 
-const default_dist = "dist";
 
-const AWS_REGION = process.env.AWS_REGION || "us-west-2";
-const BUCKET     = process.env.BUCKET     || "hefoki-public";
+const DEFAULT_DIST = "dist";
+const AWS_REGION   = process.env.AWS_REGION || "us-west-2";
+const BUCKET       = process.env.BUCKET     || "hefoki-public";
+
+
+const ETAG_MD5_RGX     = /"?([0-9a-f]{32})"?/;
+const DATE_URL_KEY_RGX = /^\/?(\d{4}-\d{2}-[0-3][0-9])\//;
 
 
 export class StaticSiteFile {
-  constructor (directory, prefix, name) {
-    this.directory   = directory;
-    this.prefix      = prefix;
-    this.name        = name;
-    this.__content   = null;
-    this.__s3_object = null;
-  }
+  constructor (object={}) {
+    // Resource key - for static sites, a path relative to the root of the
+    // build, not including a leading slash. Also calculate the key_directory
+    // and key_filename. The directory should include a trailing slash, and
+    // simple concatination with key_filename should result in the exact
+    // resource key
 
-  get local_path () {
-    if (this.directory === null) {
-      throw new TypeError("No local directory defined (this may not be a file on the local filesystem");
+    if (typeof object.key !== "string")
+      throw TypeError(`key isn't a string: ${object.key}`);
+
+    this.key = object.key || object.resource_key;
+
+    this.key_separator    = object.key_separator ?? "/";
+    const key_fname_index = this.key.lastIndexOf(this.key_separator) + 1;
+    this.key_directory    = this.key.slice(0, key_fname_index);
+    this.key_filename     = this.key.slice(key_fname_index);
+
+    // Locator - An implementation-agnostic string which can be resolved to
+    // this resource.
+
+    if (object.locator === null || object.locator === undefined) {
+      this.locator           = null;
+      this.locator_separator = null;
+      this.locator_prefix    = null;
+    }
+    else if (typeof object.locator !== "string") {
+      throw new TypeError("locator is not a string or null");
+    }
+    else {
+      this.locator           = object.locator;
+      this.locator_separator = object.locator_separator ?? "/";
+
+      if (object.locator_prefix) {
+        this.locator_prefix = object.locator_prefix;
+      }
+      else if (this.locator.endsWith(this.key)) {
+        this.locator_prefix = this.locator.slice(0, -this.key.length);
+      }
+      else {
+        this.locator_prefix = null;
+      }
     }
 
-    return Path.join(this.directory, this.name);
+    this.mimetype  = object.mimetype ?? Mime.lookup(this.key_name);
+    this.__content = object.content  ?? null;
+    this.__hash    = object.hash     ?? null;
+    this.modified  = false;
   }
 
-  get key () {
-    return this.prefix + this.name;
+  static localizePath (global_path, prefix="") {
+    /*
+      Return a path after a given prefix within a global path
+
+      For most static site implementations, it can be useful to have a means of
+      resolving the relative location between the root of a resource medium
+      (such as a filesystem, URI, or S3 bucket), with the root location of the
+      build within that medium.
+    */
+
+    if (prefix.length > global_path.length)
+      throw TypeError("Global path cannot be shorter than prefix");
+
+    const prefix_index = path.indexOf(prefix);
+
+    if (prefix_index === -1)
+      throw TypeError(`Prefix not found: ${prefix}`);
+
+    const localized = path.slice(prefix_index + prefix.length);
+    return localized;
+  }
+
+  async content () {
+    return await this.__content;
+  }
+
+  async setContent (new_content) {
+    this.__content  = new_content;
+    this.__hash     = null;
+    this.modified   = false;
+  }
+
+  async read () {
+    return await this.content();
+  }
+
+  async write (content = null) {
+    this.setContent(content ?? this.__content);
+    this.modified = false;
+    return this.__content;
+  }
+
+  async hash () {
+    if (this.__hash)
+      return this.__hash;
+
+    const content = await this.content();
+    return this.__hash = Crypto.createHash('md5').update(content).digest('hex');
+  }
+}
+
+
+export class StaticSiteFileLocal extends StaticSiteFile {
+  constructor (locator, key, object={}) {
+    // Normalize paths
+    locator = Path.resolve(locator);
+
+    const locator_prefix = object.locator_prefix ?? locator.slice(
+        0, -key.length
+      );
+
+    if ( locator_prefix && !locator.startsWith(locator_prefix) ) {
+      throw new TypeError("locator does not start with locator_prefix");
+    }
+
+    super({
+      ...object,
+      locator,
+      key,
+      locator_prefix,
+    });
   }
 
   async content () {
     if (this.__content === null) {
-      this.__content = Fs.promises.readFile(this.local_path);
+      this.__content = Fs.promises.readFile(this.locator);
+    }
+    return await this.__content;
+  }
+
+  async write(content = null) {
+    content = await super.write(content);
+    await Fs.promises.writeFile(this.resource_path, content);
+    return content;
+  }
+
+  static async * fromWalkDirectoryIter (locator_prefix, key_directory="") {
+    /*
+      Recursive async generator for walking static site directories.
+
+      The directory becomes the locator_prefix of the StaticSiteFileLocal objects.
+      The key_directory accumulates directories within the build, as the method recurses
+    */
+
+    // Normalize paths into absolutes with trailing slashes, and assert we're
+    // looking at a directory
+
+    locator_prefix = Path.resolve(locator_prefix);
+    if (locator_prefix.at(-1) !== "/") {
+      locator_prefix += "/";
+    }
+    if (! (await Fs.promises.lstat(locator_prefix)).isDirectory()) {
+      throw new TypeError(`Expected directory: ${locator_prefix}`);
+    }
+
+    // Walk files and directories
+
+    for await (let dirent of await Fs.promises.opendir(locator_prefix + key_directory)) {
+      let path = dirent.path + dirent.name;
+      if (dirent.isDirectory()) {
+        yield * StaticSiteFileLocal.fromWalkDirectoryIter(
+          locator_prefix,
+          `${key_directory}${dirent.name}/`
+        );
+      }
+      else {
+        yield new StaticSiteFileLocal(path, key_directory + dirent.name);
+      }
+    }
+  }
+
+  static async fromWalkDirectory (locator_prefix, key_directory="") {
+    let files = [];
+    for await (let file of StaticSiteFileLocal.fromWalkDirectoryIter(locator_prefix, key_directory)) {
+      files.push(file);
+    }
+    return files;
+  }
+}
+
+
+export class StaticSiteFileS3 extends StaticSiteFile {
+  constructor (s3_client, aws_object={}, file_object={}) {
+    let hash;
+    if (aws_object.Hash) {
+      const hash_match = object.ETag.match(ETAG_MD5_RGX);
+
+      if (hash_match === null) {
+        throw TypeError(`Could not find an MD5 hash in ETag: ${hash_match.ETag}`);
+      }
+    }
+    else {
+      hash = file_object.hash ?? null;
+    }
+
+    super({
+      ...file_object,
+      hash,
+      locator: aws_object.Key ?? file_object.key,
+    });
+
+    const bucket = aws_object.Bucket || aws_object.bucket;
+    if (!bucket)
+      throw TypeError("Bucket isn't truthy");
+    this.bucket = aws_object.Bucket;
+    this.s3_client = s3_client;
+  }
+
+  async content () {
+    if (this.__content == null) {
+      this.__content = (async () => {
+        // Arrow function used to preserve `this`
+        const download_result = await this.s3_client.send(
+          new GetObjectCommand({ Bucket: this.bucket, Key: this.locator })
+          );
+        return await download_result.Body.transformToString();
+      })();
     }
 
     return await this.__content;
   }
 
-  setContent (new_content) {
-    this.__content = new_content;
-  }
+  static async fromListObjectsV2Command (s3_client, Bucket, Prefix="", aws_options={}) {
+    // Query and filter for static site files in the S3 bucket
 
-  async writeContent(new_content = null) {
-    if (new_content !== null)
-      this.setContent(new_content);
-
-    return await Fs.promises.writeFile(
-      this.local_path, await this.content()
+    const results = await s3_client.send(
+      new ListObjectsV2Command({
+        Bucket,
+        Prefix,
+        ...aws_options
+      })
     );
+
+    const objects = results.Contents;
+
+    return StaticSiteFileS3.fromListObjectResults(s3_client, Bucket, objects, Prefix);
   }
 
-  async hash () {
-    const content = await this.content();
-    return Crypto.createHash('md5').update(content).digest('hex');
-  }
-}
+  static fromListObjectResults (s3_client, Bucket, objects, prefix="") {
+    const ssg_files = new Array(objects.length);
 
-
-export async function * walkSSGFilesAsync (path, prefix="") {
-  /*
-    Recursive async generator for walking static site directories.
-  */
-
-  for await (let dirent of await Fs.promises.opendir(path)) {
-    if (dirent.isDirectory()) {
-      yield * walkSSGFilesAsync(
-        Path.join(path, dirent.name),
-        `${prefix}${dirent.name}/`
+    for (let i in objects) {
+      const object = objects[i];
+      ssg_files[i] = new StaticSiteFileS3(
+        s3_client,
+        { Bucket, ...object },
+        { key: object.Key.slice(prefix.length),
+          locator_prefix: prefix,
+        }
       );
     }
-    else {
-      yield new StaticSiteFile( path, prefix, dirent.name );
-    }
+
+    return ssg_files;
   }
 }
 
@@ -100,10 +294,10 @@ export function mergeIndexedArrays (indexes_a, indexes_b, values_a=null, values_
     Returns
       [{
         index,
-        a_value, b_value,
+        value_a, value_b,
         prev,    next,
-        a_prev,  a_next
-        b_prev,  b_next
+        prev_a,  next_a
+        prev_b,  next_b
       }]
   */
 
@@ -144,12 +338,12 @@ export function mergeIndexedArrays (indexes_a, indexes_b, values_a=null, values_
 
     let merge_entry = {
       index:   null,
-      a_value: null,
-      b_value: null,
-      prev:   last_merge?.index ?? null,
-      next:   null,
-      a_prev: null,       a_next: null,
-      b_prev: null,       b_next: null,
+      value_a: null,
+      value_b: null,
+      prev:    last_merge?.index ?? null,
+      next:    null,
+      prev_a:  null,       next_a: null,
+      prev_b:  null,       next_b: null,
     };
 
     // Determine the lowest value between the current index of the A and B
@@ -160,14 +354,14 @@ export function mergeIndexedArrays (indexes_a, indexes_b, values_a=null, values_
     if (a_index == b_index) {
       merge_entry.index   = a_index;
 
-      merge_entry.a_value = values_a[a_i] ?? null;
-      merge_entry.b_value = values_b[b_i] ?? null;
+      merge_entry.value_a = values_a[a_i] ?? null;
+      merge_entry.value_b = values_b[b_i] ?? null;
 
-      merge_entry.a_prev  = last_a?.index ?? null;
-      merge_entry.b_prev  = last_b?.index ?? null;
+      merge_entry.prev_a  = last_a?.index ?? null;
+      merge_entry.prev_b  = last_b?.index ?? null;
 
-      if (last_a) last_a.a_next = a_index;
-      if (last_b) last_b.b_next = a_index;
+      if (last_a) last_a.next_a = a_index;
+      if (last_b) last_b.next_b = a_index;
 
       last_a = merge_entry;
       last_b = merge_entry;
@@ -177,17 +371,17 @@ export function mergeIndexedArrays (indexes_a, indexes_b, values_a=null, values_
     }
     else if (( a_index < b_index ) && (  a_index !== null )) {
       merge_entry.index   = a_index;
-      merge_entry.a_value = values_a[a_i] ?? null;
-      merge_entry.a_prev  = last_a?.index ?? null;
-      if (last_a) last_a.a_next = a_index;
+      merge_entry.value_a = values_a[a_i] ?? null;
+      merge_entry.prev_a  = last_a?.index ?? null;
+      if (last_a) last_a.next_a = a_index;
       last_a = merge_entry;
       a_i++;
     }
     else {
-      merge_entry.index = b_index;
-      merge_entry.b_value = values_b[b_i] ?? null;
-      merge_entry.b_prev = last_b?.index ?? null;
-      if (last_b) last_b.b_next = b_index;
+      merge_entry.index   = b_index;
+      merge_entry.value_b = values_b[b_i] ?? null;
+      merge_entry.prev_b  = last_b?.index ?? null;
+      if (last_b) last_b.next_b = b_index;
       last_b = merge_entry;
       b_i++;
     }
@@ -202,50 +396,160 @@ export function mergeIndexedArrays (indexes_a, indexes_b, values_a=null, values_
 }
 
 
-export async function localBuildPostprocess (options={}) {
+export function updatePagination (html, pagination, find_prev=null, find_next=null) {
+  /*
+    Given a StaticSiteFile and an object with a next and previous attribute,
+    find paginated links and update them, then return the resultant HTML. If
+    pagination.next or pagination.prev are falsey, skip updating them.
+
+    The Cheerio search functions to find the pagination links can be overridden,
+    but default to functions which, given Cheerio object, query for anchor
+    elements with the .next and .prev attributes.
+  */
+
+  find_prev ??= ($ => $('a.prev'));
+  find_next ??= ($ => $('a.next'));
+
+  const $             = Cheerio.load(html);
+  let   prev_modified = false;
+  let   next_modified = false;
+
+  UPDATE_PREV:
+  if (pagination.prev != null) {
+    const prev_href = normalizeKeyToUrl(pagination.prev);
+
+    const prev_elements = find_prev($);
+    if (prev_elements.length === 0) {
+      // There are no paginated links to modify
+      break UPDATE_PREV;
+    }
+    const prev_hrefs = Array.from(prev_elements.map((i, el) => $(el).attr("href")));
+    if (prev_hrefs.length == 0) {
+      break UPDATE_PREV;
+    }
+
+    if (! prev_hrefs.some(href => href != prev_href)) {
+      break UPDATE_PREV;
+    }
+
+    prev_modified = true;
+    prev_elements.attr("href", prev_href);
+  }
+
+  UPDATE_NEXT:
+  if (pagination.next != null) {
+    const next_href = normalizeKeyToUrl(pagination.next);
+
+    const next_elements = find_next($);
+    if (next_elements.length === 0) {
+      // There are no paginated links to modify
+      break UPDATE_NEXT;
+    }
+    const next_hrefs = Array.from(next_elements.map((i, el) => $(el).attr("href")));
+    if (next_hrefs.length == 0) {
+      break UPDATE_NEXT;
+    }
+
+    if (! next_hrefs.some(href => href != next_href)) {
+      break UPDATE_NEXT;
+    }
+
+    next_modified = true;
+    next_elements.attr("href", next_href);
+  }
+
+  if (prev_modified || next_modified) {
+    return $.html();
+  }
+  else {
+    return html
+  };
+}
+
+
+export function getPagination (html, find_prev=null, find_next=null) {
+  /*
+    Given a StaticSiteFile, find paginated links and return their href links in
+    a dict, associating 'next' and 'prev' with arrays of links.
+
+    The Cheerio search functions to find the pagination links can be overridden,
+    but default to functions which, given Cheerio object, query for anchor
+    elements with the .next and .prev attributes.
+  */
+
+  find_prev = find_prev ?? ($ => $('a.prev'));
+  find_next = find_next ?? ($ => $('a.next'));
+
+  const $ = Cheerio.load(html);
+
+  return {
+    prev: find_prev($).map((i, element) => $(element).attr("href")).toArray(),
+    next: find_next($).map((i, element) => $(element).attr("href")).toArray()
+  };
+}
+
+
+function normalizeUrlToKey (url) {
+  if (url == "")
+    return null;
+
+  if (! url.endsWith(".html"))
+    if (! url.endsWith("/"))
+      url = url + "/";
+    url = url + "index.html";
+
+  if (url.startsWith("/"))
+    url = url.slice(1);
+
+  return url;
+}
+
+
+function normalizeKeyToUrl (key) {
+  if (key.endsWith("index.html")) {
+    key = key.slice(0, 10);
+    if (key.at(-1) !== "/")
+      key += "/";
+  }
+  else if ( ! (                                         // if not
+    (key.split("/").at(-1)?.indexOf(".") ?? -1) + 1 &&  // a file path, nor
+    key.at(-1) === "/"                                  // has trailing slash
+  )) {
+    key += "/"
+  }
+
+  return key;
+}
+
+
+export async function buildPostprocess (old_files, new_files, options={}) {
   /*
     Build static site, then compare the files with those in the existing static
     site public bucket. Upload updated a new files. For paginated links, edit
     their HTML before uploading to ensure evailable paginated links, and to
     download and do the same for old paginated links where needed.
   */
-  // TODO: break this down into smaller, more testable functions
 
-  const dist      = options.dist      ?? default_dist;
-  const Region    = options.Region    ??   AWS_REGION;
-  const Bucket    = options.Bucket    ??       BUCKET;
-
-  const s3_client = options.s3_client ?? new S3Client({ Region });
+  const force              = options.force              ?? false;
+  const enforce_pagination = options.enforce_pagination ?? true;
 
   // Query and filter for existing date-paginated pages in the S3 bucket, and
   // put them into a dict indexed by date.
 
-  const result = await s3_client.send(
-    new ListObjectsV2Command({
-      Bucket: Bucket,
-      // TODO: filter by prefix
-    })
-  );
-
-  const existing_objects = {};
-  const ETAG_MD5_RGX     = /"?([0-9a-f]{32})"?/;
-  const DATE_URL_KEY_RGX = /^\/?(\d{4}-\d{2}-[0-3][0-9])\//;
-
+  const existing_objects   = {};
   const day_pages_existing = {};
+  const static_pages       = {};
 
-  for (let object of result.Contents) {
-    const hash_match = object.ETag.match(ETAG_MD5_RGX);
+  for (let file of old_files) {
+    existing_objects[file.key] = file;
 
-    if (hash_match === null) {
-      throw TypeError(`Could not find an MD5 hash in ETag: ${hash_match.ETag}`);
+    const date_match = file.key.match(DATE_URL_KEY_RGX);
+    if (date_match) {
+      day_pages_existing[date_match[1]] = file;
     }
 
-    object.hash = hash_match[1];
-    existing_objects[object.Key] = object;
-
-    const date_match = object.Key.match(DATE_URL_KEY_RGX);
-    if (date_match) {
-      day_pages_existing[date_match[1]] = object;
+    if (force) {
+      static_pages[file.key] = await file.content();
     }
   }
 
@@ -257,20 +561,13 @@ export async function localBuildPostprocess (options={}) {
   // and skipping files which already exist with matching hashes.
   //
   const day_pages_new = {};
-  const static_pages  = {};
 
-  for await (let new_page of walkSSGFilesAsync(dist)) {
-    const date_match = new_page.prefix.match(DATE_URL_KEY_RGX);
+  for await (let new_page of new_files) {
+    const date_match = new_page.key.match(DATE_URL_KEY_RGX);
     const hash = await new_page.hash();
 
     if ( ! date_match ) {
       const existing_page = existing_objects[new_page.key];
-
-      // Skip uploading existing, matching pages
-      if (existing_page?.hash === hash) {
-        continue;
-      }
-
       static_pages[new_page.key] = await new_page.content();
       continue;
     }
@@ -279,6 +576,7 @@ export async function localBuildPostprocess (options={}) {
     day_pages_new[date] = new_page;
   }
 
+  //
   // Prepare an array of merge entry objects to use for comparison of new
   // pages and old to flag pages who in need of their paginated links being
   // adjusted.
@@ -308,11 +606,14 @@ export async function localBuildPostprocess (options={}) {
     // For each merge entry (and by extension, each old and new SSG file),
     // perform these checks so that update operations may be later determined.
 
-    const both_pages             = merge.a_value && merge.b_value;
-    const is_new_page            = Boolean(!merge.a_value && merge.b_value );
-    const is_hash_update         = both_pages && ( merge.a_value.hash !== await merge.b_value.hash() );
-    const is_a_pagination_update = merge.a_value && merge.a_prev !== merge.prev || merge.a_next !== merge.next;
-    const is_b_pagination_update = merge.b_value && merge.b_prev !== merge.prev || merge.b_next !== merge.next;
+    const a = Boolean(merge.value_a);
+    const b = Boolean(merge.value_b);
+
+    const both_pages             =  a && b;
+    const is_new_page            = !a && b;
+    const is_hash_update         = both_pages && ( await merge.value_a.hash() !== await merge.value_b.hash() );
+    const is_a_pagination_update = a && (merge.prev_a !== merge.prev || merge.next_a !== merge.next);
+    const is_b_pagination_update = b && (merge.prev_b !== merge.prev || merge.next_b !== merge.next);
 
     const is_pagination_update   = is_b_pagination_update || ( is_a_pagination_update && ! is_hash_update );
     const is_content_update      = is_hash_update         || is_pagination_update;
@@ -329,48 +630,73 @@ export async function localBuildPostprocess (options={}) {
     });
   }
 
-  // Calculate updates
-  // Use a map of async functions to parallelize S3 IO
-  //
-  await Promise.all( merged.map(async merge_entry => {
-    if (! merge_entry.is_update)
-      return;
+  if (enforce_pagination) {
+    for (let merge_entry of merged) {
+      // Get a StaticSiteFile from the merge_entry, prioritizing the B value.
+      // At least one of these values should be truthy, so this should evaluate
+      // to one of them, or else mergeIndexedArrays has a bug.
+      const page       = merge_entry.value_b || merge_entry.value_a;
+      const pagination = getPagination(await page.content());
+      const next_links = Array.from(new Set(pagination.next.map(normalizeUrlToKey).filter(x => x != null)));
+      const prev_links = Array.from(new Set(pagination.prev.map(normalizeUrlToKey).filter(x => x != null)));
 
-    if (!merge_entry.is_content_update && merge_entry.is_new_page) {
-      static_pages[merge_entry.index] = await merge_entry.b_value.content();
-      return;
-    }
+      // Get the next and previous cannonical page links from the merge_entry,
+      // and normalize indices into static site build keys (ie: they include
+      // index.html)
+      let prev_href = merge_entry.prev && normalizeUrlToKey(merge_entry.prev);
+      let next_href = merge_entry.next && normalizeUrlToKey(merge_entry.next);
 
-    // If the new page's pagination is being updated, than an update to the old
-    // page's pagination is irrelevant, since it will be overwritten. For this
-    // reason, an if condition is used to prioritize updates to page B, the
-    // more recent one.
-
-    if (merge_entry.is_b_pagination_update) {
-      const file     = merge_entry.b_value;
-      const content  = await file.content();
-      const new_html = updatePagination(content, merge_entry);
-      await file.writeContent(new_html);
-      static_pages[merge_entry.key] = new_html;
-    }
-    else if (merge_entry.is_a_pagination_update) {
-      const Key = merge_entry.a_value.Key;
-
-      const download_result = await s3_client.send(
-        new GetObjectCommand({ Bucket, Key })
+      //
+      // Detect any changes in existing next and previous links within the
+      // page. First is a check which evaluates the set of detected links, and
+      // determines whether the length of that set is different from the set of
+      // the respective set of cannonical next or prev links, which will equal
+      // either one or zero, depending on whether the link exists in the merge.
+      // Also, this criteria causes pages with multiple matched pagination
+      // links with mismatched hrefs to flag this page as requiring a
+      // pagination update. This criteria needs to exist, due to the
+      // possiblity of links not existing or this page being the start or end
+      // of pagination.
+      //
+      // Next, check the links themselves, and whether any of them differ
+      //
+      const is_pagination_update = (
+        next_links.length != Boolean(next_href)    || 
+        prev_links.length != Boolean(prev_href)    || 
+        next_links.some(href => href != next_href) ||
+        prev_links.some(href => href != prev_href)
       );
 
-      const content  = download_result.read();
-      const new_html = updatePagination(content, merge_entry);
+      if (is_pagination_update) {
+        merge_entry[
+          (page === merge_entry.value_a)
+          ? 'is_a_pagination_update'
+          : 'is_b_pagination_update'
+        ] = true;
 
-      static_pages[Key] = new_html;
+        merge_entry.is_update            = true;
+        merge_entry.is_content_update    = true;
+        merge_entry.is_pagination_update = true;
+      }
     }
-    else if (merge_entry.is_update) {
-      // Pass this on to be uploaded with the rest of the static files
-      static_pages[merge_entry.b_value.key] = await merge_entry.b_value.content();
+  }
+
+  //
+  // Calculate updates, populating the static_pages dict to be returned
+  //
+  await Promise.all( merged.map(async merge_entry => {
+    if (!(force || merge_entry.is_update))
+      return;
+
+    const page             = merge_entry.value_b || merge_entry.value_a;
+    const original_content = await page.content();
+    let   content          = original_content;
+    if (enforce_pagination || merge_entry.is_pagination_update) {
+      content = updatePagination(content, merge_entry);
     }
-    else {
-      throw new Error(`Not sure what do do with merge_entry; key: ${merge_entry.index}`);
+
+    if (force || content != original_content || merge_entry.is_new_page) {
+      static_pages[page.key] = content;
     }
   }));
 
@@ -382,6 +708,8 @@ async function uploadFilesToS3 (static_pages, options={}) {
   /*
     Given a dict of static pages, where their indexes are object keys, and the
     values are the page content, upload each as an object to S3.
+
+    TODO: CloudFront invalidation for uploaded pages
   */
 
   const Bucket = options.Bucket ??     BUCKET;
@@ -391,8 +719,9 @@ async function uploadFilesToS3 (static_pages, options={}) {
 
   const upload_promises = Object.entries(static_pages).map(async ([Key, Body]) => {
     console.log(`put: ${Bucket}/${Key} (${(Body.length/1024).toFixed(1)}kb)`);
+    const ContentType = Mime.lookup(Key);
     return await s3_client.send(
-      new PutObjectCommand({ Bucket, Key, Body })
+      new PutObjectCommand({ Bucket, Key, Body, ContentType })
     );
   });
 
@@ -400,21 +729,66 @@ async function uploadFilesToS3 (static_pages, options={}) {
 }
 
 
-export async function incrementalBuildAndDeploy () {
-  await rimraf("./dist/");
+export async function incrementalBuildAndDeploy (options={}) {
+  const dist               = options.dist               || DEFAULT_DIST;
+  const force              = options.force              ?? false;
+  const enforce_pagination = options.enforce_pagination ?? true;
+  const skip_deploy        = options.skip_deploy        || true;
+  const clean              = options.clean              || true;
+  const build              = options.clean              || true;
+  const quiet              = options.quiet              || false;
 
-  console.log("Building frontend...");
-  await hefokiFrontendBuild(default_dist);
-  console.log("Postprocessing build...");
-  const static_pages = await localBuildPostprocess({ dist: default_dist });
+  const Region             = options.Region             || AWS_REGION;
+  const Bucket             = options.Bucket             || BUCKET;
+  const s3_client          = options.s3_client          ?? new S3Client({ Region });
 
-  if ( Object.keys(static_pages).length === 0 ) {
-    console.log("No new files or pages to upload to S3");
+  //
+  // Build
+  //
+  if (build) {
+    if (!quiet) console.log("Building frontend...");
+    if (clean) {
+      await rimraf(DEFAULT_DIST);
+    }
+    await hefokiFrontendBuild(dist);
+  }
+
+  //
+  // Get new and existing build files
+  //
+  const existing_build_files = await StaticSiteFileS3.fromListObjectsV2Command(
+      s3_client, Bucket
+    );
+  const new_build_files = await StaticSiteFileLocal.fromWalkDirectory('./dist');
+
+  if (!quiet)
+    console.log("Postprocessing build...");
+
+  const updates = await buildPostprocess (
+    existing_build_files,
+    new_build_files,
+    options
+  );
+
+  // Upload to S3
+
+  if ( skip_deploy ) {
+    if (!quiet) console.log("Skipping S3 deployment. Static site files:");
+    for (let key in updates) {
+      if (!quiet) console.log(" ", key);
+    }
+    return;
+  }
+  else if ( Object.keys(updates).length === 0 ) {
+    if (!quiet) console.log("No new files or pages to upload to S3");
   }
   else {
-    console.log("Uploading postprocessed build files to S3...");
-    await uploadFilesToS3(static_pages);
+    if (!quiet) console.log("Uploading postprocessed build files to S3...");
+    await uploadFilesToS3(updates);
   }
 }
 
-await incrementalBuildAndDeploy();
+const ENV = process.env.NODE_ENV || process.env.ENV || "development";
+if (ENV.toLowerCase() !== "test") {
+  await incrementalBuildAndDeploy();
+}

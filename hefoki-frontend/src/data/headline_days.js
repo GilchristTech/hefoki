@@ -18,7 +18,7 @@ function getDateYesterday (date) {
 
 
 module.exports = async function () {
-  const HeadlinesInterfaceDynamoDB = (await import('hefoki-database/dynamodb')).default;
+  const HeadlinesInterfaceDynamoDB = (await import('@hefoki/database/dynamodb')).default;
   const headlines_interface = new HeadlinesInterfaceDynamoDB();
 
   await headlines_interface.connect();

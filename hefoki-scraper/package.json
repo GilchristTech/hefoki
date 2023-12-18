@@ -1,5 +1,5 @@
 {
-  "name": "hefoki-scraper",
+  "name": "@hefoki/scraper",
   "version": "1.0.0",
   "description": "Headlines extracted from Wikipedia",
   "type": "module",

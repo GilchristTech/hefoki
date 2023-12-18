@@ -1,17 +1,17 @@
 {
-  "name": "hefoki-frontend",
-  "version": "1.0.0",
+  "name": "@hefoki/frontend",
+  "version": "1.0.4",
   "scripts": {
     "start": "eleventy --serve",
     "build": "eleventy"
   },
   "keywords": [],
   "author": "",
-  "devDependencies": {
+  "dependencies": {
     "@11ty/eleventy": "^2.0.1",
     "eleventy-sass": "^2.2.3",
-    "hefoki-database": "file:../hefoki-database",
     "jmespath": "^0.16.0",
-    "luxon": "^3.4.4"
+    "luxon": "^3.4.4",
+    "@hefoki/database": "^1.0.0"
   }
 }

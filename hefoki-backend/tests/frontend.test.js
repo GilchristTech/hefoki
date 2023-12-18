@@ -1,52 +1,173 @@
+import { describe, it, expect } from 'vitest';
 import * as Frontend from '../frontend.js';
+import * as Fixtures from './fixtures.js';
+
+import { DateTime } from 'luxon';
+import Cheerio      from 'cheerio';
+
 
 describe("mergeIndexedArrays", () => {
-    it("links lists", () => {
-        const merged = Frontend.mergeIndexedArrays(
-            [  1,2,3  ],
-            [0,  2,3,4],
-        );
+  it("links lists", () => {
+    const merged = Frontend.mergeIndexedArrays(
+      [  1,2,3  ],
+      [0,  2,3,4],
+    );
 
-        expect(merged.length).toBe(5);
+    expect(merged.length).toBe(5);
 
-        expect(merged[0]).toEqual({
-            index:      0,
-            a_value: null, b_value:    0,
-            prev:    null, next:       1,
-            a_prev:  null, a_next:  null,
-            b_prev:  null, b_next:     2,
-        });
-
-        expect(merged[1]).toEqual({
-            index:      1,
-            a_value:    1, b_value: null,
-            prev:       0, next:       2,
-            a_prev:  null, a_next:     2,
-            b_prev:  null, b_next:  null,
-        });
-
-        expect(merged[2]).toEqual({
-            index:      2,
-            a_value:    2, b_value:    2,
-            prev:       1, next:       3,
-            a_prev:     1, a_next:     3,
-            b_prev:     0, b_next:     3,
-        });
-
-        expect(merged[3]).toEqual({
-            index:      3,
-            a_value:    3, b_value:    3,
-            prev:       2, next:       4,
-            a_prev:     2, a_next:  null,
-            b_prev:     2, b_next:     4,
-        });
-
-        expect(merged[4]).toEqual({
-            index:      4,
-            a_value: null, b_value:    4,
-            prev:       3, next:    null,
-            a_prev:  null, a_next:  null,
-            b_prev:     3, b_next:  null,
-        });
+    expect(merged[0]).toEqual({
+      index:      0,
+      value_a: null, value_b:    0,
+      prev:    null, next:       1,
+      prev_a:  null, next_a:  null,
+      prev_b:  null, next_b:     2,
     });
+
+    expect(merged[1]).toEqual({
+      index:      1,
+      value_a:    1, value_b: null,
+      prev:       0, next:       2,
+      prev_a:  null, next_a:     2,
+      prev_b:  null, next_b:  null,
+    });
+
+    expect(merged[2]).toEqual({
+      index:      2,
+      value_a:    2, value_b:    2,
+      prev:       1, next:       3,
+      prev_a:     1, next_a:     3,
+      prev_b:     0, next_b:     3,
+    });
+
+    expect(merged[3]).toEqual({
+      index:      3,
+      value_a:    3, value_b:    3,
+      prev:       2, next:       4,
+      prev_a:     2, next_a:  null,
+      prev_b:     2, next_b:     4,
+    });
+
+    expect(merged[4]).toEqual({
+      index:      4,
+      value_a: null, value_b:    4,
+      prev:       3, next:    null,
+      prev_a:  null, next_a:  null,
+      prev_b:     3, next_b:  null,
+    });
+  });
 });
+
+
+describe("buildPostprocess", () => {
+  it("passes through empty input", async () => {
+    const old_files = [];
+    const new_files = [];
+    const pages = await Frontend.buildPostprocess([], []);
+    expect(pages).toEqual({});
+  });
+
+  it("passes through new files", async () => {
+    const old_files = [];
+    const new_files = [
+      new Frontend.StaticSiteFile({
+        key:     'index.html',
+        content: Fixtures.html.plain + ""
+      })
+    ];
+    const pages = await Frontend.buildPostprocess(old_files, new_files);
+
+    expect(pages).toEqual({
+      'index.html': Fixtures.html.plain
+    });
+  });
+
+  it("don't copy old unmodified files", async () => {
+    const old_files = [
+      new Frontend.StaticSiteFile({
+        key:     'index.html',
+        content: Fixtures.html.plain + ""
+      })
+    ];
+    const new_files = [];
+    const pages = await Frontend.buildPostprocess(old_files, new_files);
+    expect(pages).toEqual({});
+  });
+
+  it("copy old unmodified files, if forced", async () => {
+    const old_files = [
+      new Frontend.StaticSiteFile({
+        key:     'index.html',
+        content: Fixtures.html.plain + ""
+      })
+    ];
+    const pages = await Frontend.buildPostprocess(
+        old_files, [], {force: true}
+      );
+    expect(pages).toEqual({
+      'index.html': Fixtures.html.plain
+    });
+  });
+
+  describe("adjacent date-indexed page sets", () => {
+    it("only returns modified or new pages", async () => {
+      function generatePage (day_index, prev, next) {
+        const key  = `${day_index}/index.html`;
+        const html = Fixtures.generateHtmlPaginated(day_index, prev, next);
+        return {
+          key, html,
+          page: new Frontend.StaticSiteFile({ key, content: html })
+        };
+      }
+
+      const days_a = [
+        generatePage('2023-11-01',   null,          '2023-11-02/'),
+        generatePage('2023-11-02',   '2023-11-01/', null         )
+      ];
+
+      const days_b = [
+          generatePage('2023-11-04', null,          '2023-11-05/'),
+          generatePage('2023-11-05', '2023-11-04/', null         )
+      ];
+
+      const static_pages = await Frontend.buildPostprocess(
+        days_a.map(p => p.page), days_b.map(p => p.page)
+      );
+
+      expect(
+        Object.keys(static_pages).toSorted()
+      ).toEqual([
+        // 2023-11-01             // skip: neither new, nor modified
+        '2023-11-02/index.html',  // Pagination modified
+        '2023-11-04/index.html',  // New, pagination modified
+        '2023-11-05/index.html'   // New
+      ]);
+    });
+  });
+
+  describe("pagination enforcement", () => {
+    it("fixes incorrect pagination links", async () => {
+      // Correct pagination, no modifications needed
+      const page_a_content = Fixtures.generateHtmlPaginated('2023-11-01', null, '2023-11-03/');
+      const page_a = new Frontend.StaticSiteFile({
+        key: `2023-11-01/index.html`,
+        content: page_a_content,
+      });
+
+      // Previous page does not exist, should have pagination updated
+      const page_b = new Frontend.StaticSiteFile({
+        key: `2023-11-03/index.html`,
+        content: Fixtures.generateHtmlPaginated('2023-11-03', '2023-11-02/', null)
+      });
+
+      const updates = await Frontend.buildPostprocess(
+        [page_a], [page_b], { enforce_pagination: true }
+      );
+      
+      expect(
+        Object.keys(updates).toSorted()
+      ).toEqual(
+        ['2023-11-03/index.html']
+      );
+    });
+  });
+})

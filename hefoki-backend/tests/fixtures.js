@@ -60,3 +60,36 @@ export const headlines_array = [
       "text": "Fifth test fails!"
   },
 ];
+
+
+export function generateHtml (insert={}) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>${insert.title || "Test page"}</title>${ insert.head || ""}</head>
+<body>${ insert.body || ""}${ insert.main ? "<main>"+insert.main+"</main>" : "" }</body>
+</html>`
+}
+
+
+export function generateHtmlPaginated(index, prev, next, insert={}) {
+  const title = insert.title || (`Page: ${index}`);
+  prev ??= "";
+  next ??= "";
+  return generateHtml({
+    ...insert,
+    title,
+    main: (
+      "<nav>"                                          +
+        `<a class="prev" href="${prev}">Previous</a>`  +
+        `<h1>${title}</h1>`                            +
+        `<a class="next" href="${next}">Next</a>`      +
+      "</nav>"                                         +
+      ( insert.main || "" )
+    ),
+  });
+}
+
+
+export const html = {
+  plain: generateHtml({ title: 'Plain page' })
+};

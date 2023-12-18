@@ -1,14 +1,10 @@
 {
-  "name": "hefoki-database",
+  "name": "@hefoki/database",
   "version": "1.0.0",
-  "description": "The Hefoki backend contains application code to",
+  "description": "Database adapter for Hefoki",
   "type": "module",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Gilchrist Pitts",
   "exports": {
     ".": "./headlines-interface.js",
     "./dynamodb": "./dynamodb.js"

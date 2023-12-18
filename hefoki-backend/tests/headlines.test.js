@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import * as Headlines      from '../headlines.js';
 import { headlines_array } from './fixtures.js';
 

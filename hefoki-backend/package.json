@@ -1,5 +1,5 @@
 {
-  "name": "hefoki-backend",
+  "name": "@hefoki/backend",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -7,7 +7,7 @@
   "scripts": {
     "scrape": "node index.js",
     "deploy": "node frontend.js",
-    "test":   "NODE_OPTIONS='--experimental-vm-modules' jest"
+    "test": "vitest"
   },
   "keywords": [],
   "author": "Gilchrist Pitts",
@@ -15,16 +15,17 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.445.0",
     "@aws-sdk/client-s3": "^3.462.0",
+    "@hefoki/database": "^1.0.0",
+    "@hefoki/frontend": "^1.0.4",
+    "@hefoki/scraper": "^1.0.0",
     "cheerio": "^1.0.0-rc.12",
     "deep-equal": "^2.2.3",
     "dotenv": "^16.3.1",
-    "hefoki-database": "file:../hefoki-database",
-    "hefoki-frontend": "file:../hefoki-frontend",
-    "hefoki-scraper": "file:../hefoki-scraper",
     "luxon": "^3.4.4",
+    "mime-types": "^2.1.35",
     "rimraf": "^5.0.5"
   },
   "devDependencies": {
-    "jest": "^29.7.0"
+    "vitest": "^1.0.4"
   }
 }
