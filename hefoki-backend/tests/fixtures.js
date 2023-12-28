@@ -1,3 +1,5 @@
+import * as Cheerio from 'cheerio';
+
 export const headlines_array = [
   {
       "date": "2023-11-14",
@@ -63,11 +65,11 @@ export const headlines_array = [
 
 
 export function generateHtml (insert={}) {
-  return `<!DOCTYPE html>
+  return Cheerio.load(`<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><title>${insert.title || "Test page"}</title>${ insert.head || ""}</head>
 <body>${ insert.body || ""}${ insert.main ? "<main>"+insert.main+"</main>" : "" }</body>
-</html>`
+</html>`).html();
 }
 
 

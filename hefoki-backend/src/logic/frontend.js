@@ -525,7 +525,7 @@ function normalizeKeyToUrl (key) {
 export async function buildPostprocess (old_files, new_files, options={}) {
   /*
     Build static site, then compare the files with those in the existing static
-    site public bucket. Upload updated a new files. For paginated links, edit
+    site public bucket. Upload updated and new files. For paginated links, edit
     their HTML before uploading to ensure evailable paginated links, and to
     download and do the same for old paginated links where needed.
   */
@@ -700,11 +700,23 @@ export async function buildPostprocess (old_files, new_files, options={}) {
     }
   }));
 
+  //
+  // Unless forcing, remove any updates which match an old page
+  //
+  if (!force) {
+    for (let key of Object.keys(static_pages)) {
+      const updated_content = static_pages[key];
+      if (updated_content == await existing_objects[key]?.content()) {
+        delete static_pages[key];
+      }
+    }
+  }
+
   return static_pages;
 }
 
 
-async function uploadFilesToS3 (static_pages, options={}) {
+export async function uploadFilesToS3 (static_pages, options={}) {
   /*
     Given a dict of static pages, where their indexes are object keys, and the
     values are the page content, upload each as an object to S3.
@@ -726,69 +738,4 @@ async function uploadFilesToS3 (static_pages, options={}) {
   });
 
   return await Promise.all(upload_promises);
-}
-
-
-export async function incrementalBuildAndDeploy (options={}) {
-  const dist               = options.dist               || DEFAULT_DIST;
-  const force              = options.force              ?? false;
-  const enforce_pagination = options.enforce_pagination ?? true;
-  const skip_deploy        = options.skip_deploy        || true;
-  const clean              = options.clean              || true;
-  const build              = options.clean              || true;
-  const quiet              = options.quiet              || false;
-
-  const Region             = options.Region             || AWS_REGION;
-  const Bucket             = options.Bucket             || BUCKET;
-  const s3_client          = options.s3_client          ?? new S3Client({ Region });
-
-  //
-  // Build
-  //
-  if (build) {
-    if (!quiet) console.log("Building frontend...");
-    if (clean) {
-      await rimraf(DEFAULT_DIST);
-    }
-    await hefokiFrontendBuild(dist);
-  }
-
-  //
-  // Get new and existing build files
-  //
-  const existing_build_files = await StaticSiteFileS3.fromListObjectsV2Command(
-      s3_client, Bucket
-    );
-  const new_build_files = await StaticSiteFileLocal.fromWalkDirectory('./dist');
-
-  if (!quiet)
-    console.log("Postprocessing build...");
-
-  const updates = await buildPostprocess (
-    existing_build_files,
-    new_build_files,
-    options
-  );
-
-  // Upload to S3
-
-  if ( skip_deploy ) {
-    if (!quiet) console.log("Skipping S3 deployment. Static site files:");
-    for (let key in updates) {
-      if (!quiet) console.log(" ", key);
-    }
-    return;
-  }
-  else if ( Object.keys(updates).length === 0 ) {
-    if (!quiet) console.log("No new files or pages to upload to S3");
-  }
-  else {
-    if (!quiet) console.log("Uploading postprocessed build files to S3...");
-    await uploadFilesToS3(updates);
-  }
-}
-
-const ENV = process.env.NODE_ENV || process.env.ENV || "development";
-if (ENV.toLowerCase() !== "test") {
-  await incrementalBuildAndDeploy();
 }

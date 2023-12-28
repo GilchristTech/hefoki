@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import * as Frontend from '../frontend.js';
+import * as Frontend from '../src/logic/frontend.js';
 import * as Fixtures from './fixtures.js';
 
 import { DateTime } from 'luxon';
@@ -81,7 +81,7 @@ describe("buildPostprocess", () => {
     });
   });
 
-  it("don't copy old unmodified files", async () => {
+  it("doesn't copy old unmodified files", async () => {
     const old_files = [
       new Frontend.StaticSiteFile({
         key:     'index.html',
@@ -170,4 +170,37 @@ describe("buildPostprocess", () => {
       );
     });
   });
-})
+
+  describe("Update detection", () => {
+    it("doesn't upload new files if a new-page pagination update causes it to match an old file, unless forced", async () => {
+      const page_a_content     = Fixtures.generateHtmlPaginated('2023-11-01',          null, '2023-11-02/');
+      const page_b_old_content = Fixtures.generateHtmlPaginated('2023-11-02', '2023-11-01/',          null);
+      const page_b_new_content = Fixtures.generateHtmlPaginated('2023-11-02',          null,          null);
+
+      const page_a_old = new Frontend.StaticSiteFile({ key: '2023-11-01/index.html', content: page_a_content     });
+      const page_b_old = new Frontend.StaticSiteFile({ key: '2023-11-02/index.html', content: page_b_old_content });
+      const page_b_new = new Frontend.StaticSiteFile({ key: '2023-11-02/index.html', content: page_b_new_content });
+
+      // Detect that the pages, following forced
+      // postprocessing, have not changed.
+      //
+      const updates_forced = await Frontend.buildPostprocess(
+        [ page_a_old, page_b_old ], [ page_b_new ], { enforce_pagination: true, force: true }
+      );
+
+      expect(updates_forced).toEqual({
+        '2023-11-01/index.html': page_a_content,
+        '2023-11-02/index.html': page_b_old_content
+      });
+
+      // If not forced, a pagination update should make page_b's updated
+      // content and hash equal that of the existing (old) page. In this case,
+      // no update should be performed.
+      //
+      const updates = await Frontend.buildPostprocess(
+        [ page_a_old, page_b_old ], [ page_b_new ], { enforce_pagination: true }
+      );
+      expect(updates).toEqual({});
+    });
+  });
+});

@@ -28,16 +28,16 @@ eleventyComputed:
 
 {% block main %}
   <nav class="headline-days">
-    <a class="prev" href="/{{ headline_day.yesterday_date }}/">Previous</a>
+    <a class="prev" href="{{ headline_day.prev_href }}">Previous</a>
     <h1>{{ headline_day.date }}</h1>
-    <a class="next" href="{{ pagination.href.next }}">Next</a>
+    <a class="next" href="{{ headline_day.next_href }}">Next</a>
   </nav>
 
   {% from 'components/headlines.njk' import headlinesList %}
   {{ headlinesList(headline_day.headlines) | safe }}
 
   <nav class="headline-days">
-    <a class="prev" href="/{{ headline_day.yesterday_date }}/">Previous</a>
-    <a class="next" href="{{ pagination.href.next }}">Next</a>
+    <a class="prev" href="{{ headline_day.prev_href }}">Previous</a>
+    <a class="next" href="{{ headline_day.next_href }}">Next</a>
   </nav>
 {% endblock %}

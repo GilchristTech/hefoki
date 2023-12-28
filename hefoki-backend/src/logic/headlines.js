@@ -16,6 +16,14 @@ export function headlineArrayToHeadlineDays (headlines_array) {
 }
 
 
+export function headlineDaysToHeadlineArray (headline_days) {
+  return Object.values(headline_days).reduce(
+    (headlines, headline_day) => headlines.concat(headline_day),
+    []
+  );
+}
+
+
 export function headlinesMatchExternalLinks (headlines_a, headlines_b) {
   const matched     = [];
   const unmatched_b = [];
@@ -25,13 +33,13 @@ export function headlinesMatchExternalLinks (headlines_a, headlines_b) {
   LOOP_B:
   for (let headline_bi in headlines_b) {
     const headline_b     = headlines_b[headline_bi];
-    const external_b     = headline_b.external_links;
+    const external_b     = headline_b.external_links ?? [];
     const external_b_len = external_b.length;
 
     LOOP_A:
     for (let headline_ai in headlines_a) {
       const headline_a     = headlines_a[headline_ai];
-      const external_a     = headline_a.external_links;
+      const external_a     = headline_a.external_links ?? [];
       const external_a_len = external_a.length;
 
       if (external_a_len <= external_b_len) {
@@ -166,7 +174,7 @@ export function reduceHeadlineMatchers (matchers, headlines_a, headlines_b) {
   for (let matcher_i in matchers) {
     let match;
 
-    if (unmatched_a.length == 0 || unmatched_b.length.length == 0) {
+    if (unmatched_a.length == 0 || unmatched_b.length == 0) {
       matchers_matched[matcher_i] = [];
       continue;
     }
@@ -261,6 +269,19 @@ export function headlineDayDiffsToHeadlineDays (headline_day_diffs) {
     headline_days[date] = diff.unmodified.concat(
       diff.updated.map(hp => hp[1]),
       diff.added
+    );
+  }
+
+  return headline_days;
+}
+
+
+export function headlineDayDiffsToUpdatedHeadlineDays (headline_day_diffs) {
+  const headline_days = {};
+
+  for (let [date, diff] of Object.entries(headline_day_diffs)) {
+    headline_days[date] = diff.added.concat(
+      diff.updated.map(hp => hp[1]),
     );
   }
 

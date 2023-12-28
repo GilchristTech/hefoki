@@ -1,25 +1,9 @@
 const { DateTime } = require("luxon");
 
 
-function dateString (date_obj) {
-  return (
-    `${   date_obj.getFullYear()
-    }-${ (date_obj.getMonth() + 1).toString().padStart(2, "0")
-    }-${  date_obj.getDate().toString().padStart(2, "0") }`
-  );
-}
-
-
-function getDateYesterday (date) {
-  date = new Date( date );
-  date.setDate( date.getDate() - 1 );
-  return date;
-}
-
-
 module.exports = async function () {
   const HeadlinesInterfaceDynamoDB = (await import('@hefoki/database/dynamodb')).default;
-  const headlines_interface = new HeadlinesInterfaceDynamoDB();
+  const headlines_interface        = new HeadlinesInterfaceDynamoDB();
 
   await headlines_interface.connect();
 
@@ -37,11 +21,11 @@ module.exports = async function () {
 
   // Filter empty headline days
 
-  for (let date in headline_days) {
+  for (let date of dates) {
     let headlines = headline_days[date];
 
     // Filter out empty headlines
-    headlines = headlines.filter(h => h.text.length > 0);
+    headlines = headlines?.filter(h => h.text.length > 0);
 
     // Delete days with no headlines
     if ( ! (headlines?.length > 1) ) {
@@ -50,21 +34,44 @@ module.exports = async function () {
   }
 
   // Reorganize the queried data structure into a new one
-  headline_days = Object.entries(headline_days)
-    .map(([date, headlines]) => ( {
-      date,
-      headlines,
-      yesterday_date: (
-        DateTime.fromISO(date)
-        .set({ day: DateTime.fromISO(date).day-1 })
-        .toISODate()
-      )
-    } ));
+  //
+  let yesterday_date = null;
+  let prev_href      = null;
 
-  // Sort by dates
-  headline_days.sort(
-    (a, b) => (a.date > b.date) * 2 - 1  // convert bools to -1 or 1
-  );
+  headline_days = Object.keys(headline_days)
+    .sort()
+    .map(date => {
+      const headlines = headline_days[date];
+      let   href          = `/${ date      }/`;
+      const day_prev_href = prev_href;
+      prev_href           = href;
+      yesterday_date      = date;
+
+      return {
+        date,
+        href,
+        headlines,
+        prev_href: day_prev_href,
+        next_href: null,  // will be calculated in another pass
+        yesterday_date: (
+          DateTime.fromISO(date)
+          .set({ day: DateTime.fromISO(date).day-1 })
+          .toISODate()
+        ),
+        tomorrow_date: (
+          DateTime.fromISO(date)
+          .set({ day: DateTime.fromISO(date).day+1 })
+          .toISODate()
+        )
+      };
+    });
+
+  let next_href = null;
+  
+  for (let headline_day of headline_days.toReversed()) {
+    headline_day.next_href = next_href;
+    next_href              = headline_day.href;
+  }
 
   return headline_days;
 }
