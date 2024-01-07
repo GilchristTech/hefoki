@@ -21,6 +21,7 @@ cli_frontend_command.command('increment')
   .option('-q, --quiet',          'Suppress output')
   .option('--bucket',             'Use this bucket to read or upload static site files')
   .option('-d, --dry',            "Dry run, don't deploy to S3")
+  .option('-I, --no-invalidate',  "Do not perform a CloudFront invalidation")
   .action(commandFrontendIncrement);
 
 cli_frontend_command.command('deploy')
@@ -87,11 +88,13 @@ async function commandHeadlinesUpdate (urls, options) {
 
 async function commandFrontendIncrement (options) {
   const runIncrementalBuildAndDeploy = (await import('./tasks/task-frontend.js')).default;
-  options = {...options};
+  options = { ...options };
 
-  options.dry         ??= false;
-  options.skip_deploy   = options.dry;
-  options.build_path    = options.buildPath;
+  options.dry           ??= false;
+  options.no_invalidate ??= false;
+  options.skip_deploy     = options.dry;
+  options.build_path      = options.buildPath;
+  options.invalidate      = ! options.no_invalidate;
 
   await runIncrementalBuildAndDeploy(options);
 }

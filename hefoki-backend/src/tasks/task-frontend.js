@@ -8,12 +8,18 @@ import {
   S3Client, ListObjectsV2Command
 } from '@aws-sdk/client-s3';
 
+import {
+  CloudFront
+} from '@aws-sdk/client-cloudfront';
+
 import 'dotenv/config';
 
 
-const DEFAULT_DIST = "dist";
-const AWS_REGION   = process.env.AWS_REGION || "us-west-2";
-const BUCKET       = process.env.BUCKET     || "hefoki-public";
+const DEFAULT_DIST    = "dist";
+const AWS_REGION      = process.env.AWS_REGION      || "us-west-2";
+const BUCKET          = process.env.BUCKET          || "hefoki-public";
+const DISTRIBUTION_ID = process.env.DISTRIBUTION_ID || null;
+const DEFAULT_DOMAIN  = "hefoki.today";
 
 
 function parseBoolean (value, default_value) {
@@ -30,14 +36,20 @@ export default async function runIncrementalBuildAndDeploy (options={}) {
 
   const force              = parseBoolean(options.force,              false);
   const enforce_pagination = parseBoolean(options.enforce_pagination, true);
-  const skip_deploy        = parseBoolean(options.skip_deploy,        true);
+  const skip_deploy        = parseBoolean(options.skip_deploy,        false);
+  const deploy             = parseBoolean(options.deploy,             !skip_deploy);
   const clean              = parseBoolean(options.clean,              true);
   const build              = parseBoolean(options.build,              clean);
   const quiet              = parseBoolean(options.quiet,              false);
+  const invalidate         = parseBoolean(options.invalidate,         deploy);
 
+  const domain             = options.domain    || DEFAULT_DOMAIN;
   const Region             = options.Region    || AWS_REGION;
   const Bucket             = options.Bucket    || options.bucket || BUCKET;
-  const s3_client          = options.s3_client ?? new S3Client({ Region });
+  const DistributionId     = options.distribution_id || options.DistributionId || DISTRIBUTION_ID;
+
+  const s3_client          = options.s3_client         ?? new   S3Client({ Region });
+  const cloudfront_client  = options.cloudfront_client ?? new CloudFront({ Region });
 
   //
   // Build
@@ -45,9 +57,9 @@ export default async function runIncrementalBuildAndDeploy (options={}) {
   if (build) {
     if (!quiet) console.log("Building frontend...");
     if (clean) {
-      await rimraf(DEFAULT_DIST);
+      await rimraf(dist);
     }
-    await hefokiFrontendBuild(dist);
+    const result = await hefokiFrontendBuild(dist);
   }
 
   //
@@ -56,7 +68,7 @@ export default async function runIncrementalBuildAndDeploy (options={}) {
   const existing_build_files = await Frontend.StaticSiteFileS3.fromListObjectsV2Command(
       s3_client, Bucket
     );
-  const new_build_files = await Frontend.StaticSiteFileLocal.fromWalkDirectory('./dist');
+  const new_build_files = await Frontend.StaticSiteFileLocal.fromWalkDirectory(dist);
 
   if (!quiet)
     console.log("Postprocessing build...");
@@ -81,6 +93,10 @@ export default async function runIncrementalBuildAndDeploy (options={}) {
   }
   else {
     if (!quiet) console.log("Uploading postprocessed build files to S3...");
-    await Frontend.uploadFilesToS3(updates);
+    await Frontend.uploadFilesToS3(updates, {
+      ...options,
+      invalidate,
+      DistributionId
+    });
   }
 }

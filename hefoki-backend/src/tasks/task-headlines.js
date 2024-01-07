@@ -3,6 +3,7 @@ import HeadlinesInterfaceDynamoDB from '@hefoki/database/dynamodb';
 import hefokiFrontendBuild        from '@hefoki/frontend';
 import * as Headlines             from '../logic/headlines.js';
 
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 
 import 'dotenv/config';
 
@@ -15,15 +16,17 @@ export default async function runUpdateHeadlines (options={}) {
     updates exist.
   */
 
-  const do_update = options.update ?? true;
-  const force     = options.force  ?? false;
+  const do_update            = options.update ?? true;
+  const force                = options.force  ?? false;
+  const dynamodb_client      = options.dynamodb_client ?? new DynamoDBClient();
+  const headlines_table_name = options.headlines_table_name || options.table_name || options.TableName || null;
 
   const new_headlines     = await fetchHeadlines();
   const new_headline_days = Headlines.headlineArrayToHeadlineDays(new_headlines);
 
   const dates = Object.keys(new_headline_days);
 
-  const headlines_interface = new HeadlinesInterfaceDynamoDB();
+  const headlines_interface = new HeadlinesInterfaceDynamoDB(dynamodb_client, headlines_table_name);
   await headlines_interface.connect();
   const old_headline_days = await headlines_interface.getHeadlineDays(dates);
 

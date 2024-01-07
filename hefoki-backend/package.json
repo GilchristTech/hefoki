@@ -1,20 +1,21 @@
 {
   "name": "@hefoki/backend",
-  "version": "1.0.1",
+  "version": "1.1.1",
   "description": "Tasks and logic for Hefoki",
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start":              "node src/cli.js",
-    "headlines:update":   "node src/cli.js headlines update",
+    "start": "node src/cli.js",
+    "headlines:update": "node src/cli.js headlines update",
     "frontend:increment": "node src/cli.js frontend increment",
-    "clean":              "rimraf dist",
-    "test":               "vitest"
+    "clean": "rimraf dist",
+    "test": "vitest"
   },
   "keywords": [],
   "author": "Gilchrist Pitts",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-cloudfront": "^3.484.0",
     "@aws-sdk/client-dynamodb": "^3.445.0",
     "@aws-sdk/client-s3": "^3.462.0",
     "@hefoki/database": "^1.0.0",

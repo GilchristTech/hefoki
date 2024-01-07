@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  HeadlinesTableName:
+    Type:        String
+    Description: The name of the DynamoDB table the updater lambda puts headlines in.
+    Default:     HefokiHeadlines
+
+  UpdaterLambdaFunctionName:
+    Type:        String
+    Description: Name of the updater Lambda function
+    Default:     hefoki-updater
+
+  UpdaterInterval:
+    Type:        String
+    Description: The interval between automatic calls of the updater Lambda
+    Default:     "rate(6 hours)"
+
+  PublicBucketName:
+    Type:        String
+    Description: The name of the S3 bucket hosting the static site
+    Default:     hefoki-public
+
+  UpdaterLambdaS3BucketName:
+    Type:        String
+    Description: The S3 bucket containing the zip file of the updater Lambda function
+    Default:     hefoki
+
+  UpdaterLambdaS3Key:
+    Type:        String
+    Description: The S3 key of a zip file for the updater Lambda code
+    Default:     packages/updater.zip
+
+  CloudFrontDistributionArn:
+    Type:        String
+    Description: The ARN of the CloudFront distribution for the static site
+
+
+Resources:
+  UpdaterLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Ref UpdaterLambdaFunctionName
+      Runtime:      nodejs20.x
+      Handler:      src/lambda.handler
+      Role:         !GetAtt UpdaterLambdaExecutionRole.Arn
+      Timeout:      120
+      MemorySize:   256
+      Code:
+        S3Bucket: !Ref UpdaterLambdaS3BucketName
+        S3Key:    !Ref UpdaterLambdaS3Key
+      Environment:
+        Variables:
+          HEFOKI_PUBLIC_BUCKET_NAME:   !Ref PublicBucketName
+          HEFOKI_HEADLINES_TABLE_NAME: !Ref HeadlinesTableName
+          DISTRIBUTION_ID:             !Ref CloudFrontDistributionArn
+
+  UpdaterLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: UpdaterLambdaExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:  sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+        - PolicyName: AllowDynamoDB
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${HeadlinesTableName}"
+
+        - PolicyName: AllowS3
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowIncrementalDeployment
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:ListObjectsV2
+                Resource:
+                  - !Sub 'arn:aws:s3:::${PublicBucketName}'
+                  - !Sub 'arn:aws:s3:::${PublicBucketName}/*'
+
+        - PolicyName: AllowCloudFrontInvalidation
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateInvalidation
+                Resource: !Ref CloudFrontDistributionArn
+
+  UpdaterEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name:               UpdaterrEventBridgeRule
+      Description:        Rule to trigger updater Lambda to run multiple times per day
+      ScheduleExpression: !Ref UpdaterInterval
+      State:              ENABLED
+      Targets:
+        - Id:  !Ref UpdaterLambda
+          Arn: !GetAtt UpdaterLambda.Arn
+
+  UpdaterEventRulePermissionToInvokeLambda:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UpdaterLambda
+      Action:       lambda:InvokeFunction
+      Principal:    events.amazonaws.com
+      SourceArn:    !GetAtt UpdaterEventRule.Arn

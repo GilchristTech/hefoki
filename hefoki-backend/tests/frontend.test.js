@@ -58,6 +58,41 @@ describe("mergeIndexedArrays", () => {
 });
 
 
+describe("normalizeKeyToUrl", () => {
+  const normalizeKeyToUrl = Frontend.normalizeKeyToUrl;
+
+
+  it("maintains leading and trailing slashes", () => {
+    // expect(
+    //   ("/abc/".split("/").at(-1)?.indexOf(".") ?? -1) + 1
+    // ).toEqual(99);
+    expect(normalizeKeyToUrl("/abc/")).toEqual("/abc/");
+  });
+});
+
+
+describe("updatePagination", () => {
+  it("doesn't modify pagination if provided an empty pagination dict", () => {
+    const old_html       = Fixtures.generateHtmlPaginated('2023-11-01', null, '/2023-11-02/');
+    const new_html       = Frontend.updatePagination(old_html, {});
+    const old_pagination = Frontend.getPagination(old_html);
+    const new_pagination = Frontend.getPagination(new_html);
+    expect(old_pagination).toEqual(new_pagination);
+  });
+
+  it("doesn't modify pagination if provided an identical pagination dict", () => {
+    const old_html       = Fixtures.generateHtmlPaginated('2023-11-01', null, '/2023-11-02/');
+    const new_html       = Frontend.updatePagination(old_html, {
+      prev: null,
+      next: "/2023-11-02/"
+    });
+    const old_pagination = Frontend.getPagination(old_html);
+    const new_pagination = Frontend.getPagination(new_html);
+    expect(old_pagination).toEqual(new_pagination);
+  });
+});
+
+
 describe("buildPostprocess", () => {
   it("passes through empty input", async () => {
     const old_files = [];
@@ -147,7 +182,7 @@ describe("buildPostprocess", () => {
   describe("pagination enforcement", () => {
     it("fixes incorrect pagination links", async () => {
       // Correct pagination, no modifications needed
-      const page_a_content = Fixtures.generateHtmlPaginated('2023-11-01', null, '2023-11-03/');
+      const page_a_content = Fixtures.generateHtmlPaginated('2023-11-01', null, '/2023-11-03/');
       const page_a = new Frontend.StaticSiteFile({
         key: `2023-11-01/index.html`,
         content: page_a_content,
@@ -156,7 +191,7 @@ describe("buildPostprocess", () => {
       // Previous page does not exist, should have pagination updated
       const page_b = new Frontend.StaticSiteFile({
         key: `2023-11-03/index.html`,
-        content: Fixtures.generateHtmlPaginated('2023-11-03', '2023-11-02/', null)
+        content: Fixtures.generateHtmlPaginated('2023-11-03', '/2023-11-02/', null)
       });
 
       const updates = await Frontend.buildPostprocess(
@@ -169,13 +204,51 @@ describe("buildPostprocess", () => {
         ['2023-11-03/index.html']
       );
     });
+
+    it("preserves leading hyperlink slashes", async () => {
+      const page_a = new Frontend.StaticSiteFile({
+        key: `2023-11-01/index.html`,
+        content: Fixtures.generateHtmlPaginated('2023-11-01', null, '/2023-11-02/')
+      });
+
+      const page_b = new Frontend.StaticSiteFile({
+        key: `2023-11-02/index.html`,
+        content: Fixtures.generateHtmlPaginated('2023-11-02', '/2023-11-01/', null)
+      });
+
+      const updates = await Frontend.buildPostprocess(
+        [page_a], [page_b], { enforce_pagination: true, force: true }
+      );
+      
+      expect(
+        Object.keys(updates).toSorted()
+      ).toEqual([
+        '2023-11-01/index.html',
+        '2023-11-02/index.html'
+      ]);
+
+      expect(
+        Frontend.getPagination(updates['2023-11-01/index.html'])
+      ).toEqual({
+        prev: [""],
+        next: ["/2023-11-02/"]
+      });
+
+      expect(
+        Frontend.getPagination(updates['2023-11-02/index.html'])
+      ).toEqual({
+        prev: ["/2023-11-01/"],
+        next: [""]
+      });
+
+    });
   });
 
   describe("Update detection", () => {
     it("doesn't upload new files if a new-page pagination update causes it to match an old file, unless forced", async () => {
-      const page_a_content     = Fixtures.generateHtmlPaginated('2023-11-01',          null, '2023-11-02/');
-      const page_b_old_content = Fixtures.generateHtmlPaginated('2023-11-02', '2023-11-01/',          null);
-      const page_b_new_content = Fixtures.generateHtmlPaginated('2023-11-02',          null,          null);
+      const page_a_content     = Fixtures.generateHtmlPaginated('2023-11-01',          null, '/2023-11-02/');
+      const page_b_old_content = Fixtures.generateHtmlPaginated('2023-11-02', '/2023-11-01/',          null);
+      const page_b_new_content = Fixtures.generateHtmlPaginated('2023-11-02',          null,           null);
 
       const page_a_old = new Frontend.StaticSiteFile({ key: '2023-11-01/index.html', content: page_a_content     });
       const page_b_old = new Frontend.StaticSiteFile({ key: '2023-11-02/index.html', content: page_b_old_content });

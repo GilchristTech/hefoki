@@ -14,12 +14,14 @@ import {
   ListObjectsV2Command
 } from '@aws-sdk/client-s3';
 
+import { CloudFront } from '@aws-sdk/client-cloudfront';
+
 
 const DEFAULT_DIST = "dist";
 const AWS_REGION   = process.env.AWS_REGION || "us-west-2";
 const BUCKET       = process.env.BUCKET     || "hefoki-public";
 
-
+const DEFAULT_DOMAIN   = "hefoki.today";
 const ETAG_MD5_RGX     = /"?([0-9a-f]{32})"?/;
 const DATE_URL_KEY_RGX = /^\/?(\d{4}-\d{2}-[0-3][0-9])\//;
 
@@ -489,7 +491,7 @@ export function getPagination (html, find_prev=null, find_next=null) {
 }
 
 
-function normalizeUrlToKey (url) {
+export function normalizeUrlToKey (url) {
   if (url == "")
     return null;
 
@@ -505,18 +507,20 @@ function normalizeUrlToKey (url) {
 }
 
 
-function normalizeKeyToUrl (key) {
+export function normalizeKeyToUrl (key) {
   if (key.endsWith("index.html")) {
     key = key.slice(0, 10);
-    if (key.at(-1) !== "/")
-      key += "/";
   }
   else if ( ! (                                         // if not
-    (key.split("/").at(-1)?.indexOf(".") ?? -1) + 1 &&  // a file path, nor
+    (key.split("/").at(-1)?.indexOf(".") ?? -1) + 1 ||  // a file path, nor
     key.at(-1) === "/"                                  // has trailing slash
   )) {
     key += "/"
   }
+
+  // Ensure an absolute path
+  if (key[0] !== "/")
+    key = "/" + key;
 
   return key;
 }
@@ -720,14 +724,14 @@ export async function uploadFilesToS3 (static_pages, options={}) {
   /*
     Given a dict of static pages, where their indexes are object keys, and the
     values are the page content, upload each as an object to S3.
-
-    TODO: CloudFront invalidation for uploaded pages
   */
 
   const Bucket = options.Bucket ??     BUCKET;
   const Region = options.Region ?? AWS_REGION;
 
-  const s3_client = options.s3_client ?? new S3Client({ Region });
+  const s3_client      = options.s3_client ?? new S3Client({ Region });
+  const domain         = options.domain || DEFAULT_DOMAIN;
+  const invalidate     = options.invalidate ?? true;
 
   const upload_promises = Object.entries(static_pages).map(async ([Key, Body]) => {
     console.log(`put: ${Bucket}/${Key} (${(Body.length/1024).toFixed(1)}kb)`);
@@ -737,5 +741,56 @@ export async function uploadFilesToS3 (static_pages, options={}) {
     );
   });
 
-  return await Promise.all(upload_promises);
+  const upload_results = await Promise.all(upload_promises);
+
+  if ( ! invalidate ) {
+    return {
+      upload_results,
+      invalidation_result: null
+    };
+  }
+
+  console.log("Starting CloudFront invalidation");
+
+  let cloudfront_client   = options.cloudfront_client ?? new CloudFront({ Region });
+  const invalidation_urls = Object.keys(static_pages).map(key => "/" + key);
+  let DistributionId      = ( options.distribution_id || options.DistributionId );
+
+  if ( ! DistributionId ) {
+    console.log("Looking for distribution DistributionId...");
+    DistributionId = await getCloudfrontDistributionId(cloudfront_client, domain);
+  }
+
+  console.log("Performing invalidation on CloudFront distribution with ID:", DistributionId);
+  console.log("Invalidation URLs:\n  " + invalidation_urls.join("\n  "));
+
+  const invalidation_result = cloudfront_client.createInvalidation({
+    DistributionId,
+    InvalidationBatch: {
+      CallerReference: Date.now().toString(),
+      Paths: {
+        Quantity: invalidation_urls.length,
+        Items:    invalidation_urls
+      }
+    }
+  });
+
+  return {
+    upload_results,
+    invalidation_result
+  };
+}
+
+
+export async function getCloudfrontDistributionId (client=null, domain=null) {
+  domain ||= DEFAULT_DOMAIN;
+  client ??= new CloudFront();
+  const result = await client.listDistributions({});
+
+  for (let distribution of result.DistributionList.Items) {
+    if (distribution?.Aliases?.Items?.includes(domain))
+      return distribution.Id;
+  }
+
+  throw new Error(`Couldn't find CloudFront distribution with domain: ${domain}`);
 }

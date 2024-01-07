@@ -1,6 +1,6 @@
 {
   "name": "@hefoki/frontend",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "scripts": {
     "start": "eleventy --serve",
     "build": "eleventy"

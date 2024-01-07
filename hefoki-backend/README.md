@@ -2,14 +2,24 @@
 
 The Hefoki Backend module connects other isolated Hefoki NodeJS modules,
 defines repeated tasks and logic for scraping and incremental static site
-deployment, and provides and command-line interface to these tasks.
+deployment, provides a command-line interface for these tasks, and defines an
+AWS Lambda function for cloud execution.
 
-## Scripts
+Being a static site hosted on an S3 bucket, Hefoki works by rebuilding a
+portion of the site from its existing data, comparing this with the pages which
+are already deployed, reconciling any differences in how pages are linked, and
+deploying any new or modified files. This is primarily the case for the
+paginated `next` and `previous` links on the daily news pages. Within Hefoki's
+code, this process of modifying the pages is called "repagination", and the
+overall partial deployment process is referred to as an "increment" or being
+"incremental".
+
+## NPM Scripts and CLI
 
 ### `start`: Unified CLI entrypoint
 
-Runs the main CLI script. Use `--` after the command to specify command-line arguments. For example
-
+Runs the main CLI script. Use `--` after the command to specify command-line
+arguments. For example:
 ```bash
 npm start -- scrape http://example.com/
 ```
@@ -17,8 +27,10 @@ npm start -- scrape http://example.com/
 
 Calls the 
 [Hefoki scraper](https://github.com/GilchristTech/hefoki/tree/master/hefoki-scraper),
-to collect headlines from the Wikipedia [Current Events Portal](https://en.wikipedia.org/wiki/Portal:Current_events),
-compare the results with those stored in a database (handled by the DynamoDB [database adapter](https://github.com/GilchristTech/hefoki/tree/master/hefoki-database)),
+to collect headlines from the Wikipedia
+[Current Events Portal](https://en.wikipedia.org/wiki/Portal:Current_events),
+compare the results with those stored in a database (handled by the DynamoDB
+[database adapter](https://github.com/GilchristTech/hefoki/tree/master/hefoki-database)),
 and determine which headlines are new, updating the database to become current.
 
 #### Usage
@@ -54,3 +66,10 @@ Equivalent to:
 ```bash
 npm run start -- frontend increment
 ```
+
+## Updater Lambda function
+
+The incremental deployment process is able to be deployed to AWS Lambda with
+the handler exported by `src/lambda.js`. This function calls the scraper to
+update the database, rebuilds the static frontend, incrementally deploys to S3,
+and performs a CloudFront invalidation.

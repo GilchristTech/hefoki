@@ -12,7 +12,8 @@ Location: `./hefoki-backend/`
 
 The Hefoki Backend module connects other isolated Hefoki NodeJS modules,
 defines repeated tasks and logic for scraping and incremental static site
-deployment, and provides and command-line interface to these tasks.
+deployment, provides a command-line interface for these tasks, and defines an
+AWS Lambda function for cloud execution.
 
 ## [Frontend](https://github.com/GilchristTech/hefoki/tree/master/hefoki-frontend)
 

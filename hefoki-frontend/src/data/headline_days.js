@@ -2,8 +2,9 @@ const { DateTime } = require("luxon");
 
 
 module.exports = async function () {
+  const table_name                 = process.env.HEFOKI_HEADLINES_TABLE_NAME || null;
   const HeadlinesInterfaceDynamoDB = (await import('@hefoki/database/dynamodb')).default;
-  const headlines_interface        = new HeadlinesInterfaceDynamoDB();
+  const headlines_interface        = new HeadlinesInterfaceDynamoDB(null, table_name);
 
   await headlines_interface.connect();
 
