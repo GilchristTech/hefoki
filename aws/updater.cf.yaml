@@ -14,7 +14,7 @@ Parameters:
   UpdaterInterval:
     Type:        String
     Description: The interval between automatic calls of the updater Lambda
-    Default:     "rate(6 hours)"
+    Default:     "rate(4 hours)"
 
   PublicBucketName:
     Type:        String
