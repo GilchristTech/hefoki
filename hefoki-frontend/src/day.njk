@@ -6,6 +6,7 @@ pagination:
 permalink: "/{{ headline_day.date | slugify }}/"
 eleventyComputed:
   title: "{{ headline_day.date }}"
+  meta_description: "Hefoki headlines for {{ headline_day.date }}"
 ---
 
 {% extends "base.njk" %}

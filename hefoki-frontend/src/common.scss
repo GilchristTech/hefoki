@@ -33,12 +33,27 @@ ul.headlines {
   justify-content: center;
   gap: 1em;
 
-  .external-sources {
-    font-size: 0.85em;
+  ul.external-sources {
+    font-size:     0.85em;
+    margin-top:    0.45em;
+    padding-left:  16px;
+    overflow-wrap: anywhere;
+
+    @media (max-width: 600px) {
+      font-size:      0.9em;
+      &> ul > a {
+        padding-top:      10px;
+        padding-bottom:   10px;
+      }
+    }
+    li + li {
+      margin-top: 0.5em;
+    }
   }
 
   & > li.headline {
     list-style: none;
+    max-width: 100%;
     @media (min-width: 800px) {
       flex-basis: 35ch;
     }
@@ -48,11 +63,19 @@ ul.headlines {
 .headline {
   &.panel {
     border: 1px solid #8cf;
-    padding: 0.5em 0.6em;
+    padding: 0.6em 0.75em;
     background: white;
     box-shadow:
       2px 4px 0px #4441,
       0px 10px 12px 1px #3733;
+  }
+
+  .category {
+    font-size: 1.05em;
+    font-weight: bold;
+    padding-bottom: 0.15em;
+    margin-bottom: 0.65em;
+    border-bottom: 1px solid #bbb;
   }
 
   p {

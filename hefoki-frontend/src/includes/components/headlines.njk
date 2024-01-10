@@ -1,8 +1,11 @@
 {% macro headlineContent (headline) %}
+  <p class="category">
+    {{ headline.tags[0] }}
+  </p>
   <p>{{ headline.text }}</p>
   <ul class="external-sources">
   {%- for external_link in headline.external_links -%}
-    <li><a target="_blank" href="{{ external_link }}">{{ external_link }}</a></li>
+    <li><a target="_blank" rel="noopener" href="{{ external_link }}">{{ external_link }}</a></li>
   {%- endfor -%}
   </ul>
 {% endmacro %}
