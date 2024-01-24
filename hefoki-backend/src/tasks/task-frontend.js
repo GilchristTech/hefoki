@@ -1,3 +1,5 @@
+import Task from './task.js';
+
 import * as Frontend from '../logic/frontend.js';
 import hefokiFrontendBuild from '@hefoki/frontend';
 
@@ -14,6 +16,8 @@ import {
 
 import 'dotenv/config';
 
+import { parseBoolean } from "./utils.js";
+
 
 const DEFAULT_DIST    = "dist";
 const AWS_REGION      = process.env.AWS_REGION      || "us-west-2";
@@ -22,81 +26,149 @@ const DISTRIBUTION_ID = process.env.DISTRIBUTION_ID || null;
 const DEFAULT_DOMAIN  = "hefoki.today";
 
 
-function parseBoolean (value, default_value) {
-  return Boolean((value && value != "false") ?? default_value)
-}
+export class TaskIncrementalBuildAndDeploy extends Task {
+  constructor (name=null, args=undefined, task="") {
+    if (name === null)
+      name = "increment_frontend";
+    super(name, args, task);
+  }
 
+  async handler (task, options={}) {
+    //
+    // Options
+    //
+    const dist = (
+        options.dist       ||
+        options.build_path || options.buildPath ||
+        DEFAULT_DIST
+      );
 
-export default async function runIncrementalBuildAndDeploy (options={}) {
-  const dist = (
-      options.dist       ||
-      options.build_path || options.buildPath ||
-      DEFAULT_DIST
+    const force              = parseBoolean(options.force,              false);
+    const enforce_pagination = parseBoolean(options.enforce_pagination, true);
+    const skip_deploy        = parseBoolean(options.skip_deploy,        false);
+    const deploy             = parseBoolean(options.deploy,             !skip_deploy);
+    const clean              = parseBoolean(options.clean,              true);
+    const build              = parseBoolean(options.build,              clean);
+    const quiet              = parseBoolean(options.quiet,              false);
+    const invalidate         = parseBoolean(options.invalidate,         deploy);
+
+    const domain             = options.domain    || DEFAULT_DOMAIN;
+    const Region             = options.Region    || AWS_REGION;
+    const Bucket             = options.Bucket    || options.bucket || BUCKET;
+    const DistributionId     = options.distribution_id || options.DistributionId || DISTRIBUTION_ID;
+
+    const s3_client          = options.s3_client         ?? new   S3Client({ Region });
+    const cloudfront_client  = options.cloudfront_client ?? new CloudFront({ Region });
+
+    const include_build_content = parseBoolean(options.include_build_content, false);
+
+    const results = {};
+
+    //
+    // Build
+    //
+    if (build) {
+      await this.runSubtask(
+        "build", async () => {
+          if (!quiet)
+            console.log("Building frontend...");
+
+          if (clean) {
+            await rimraf(dist);
+          }
+
+          const eleventy_build_output = await hefokiFrontendBuild(dist);
+
+          if ( ! include_build_content ) {
+            for (let build_list of eleventy_build_output) {
+              for (let build_object of build_list) {
+                delete build_object.content;
+              }
+            }
+          }
+
+          return eleventy_build_output;
+        }
+      );
+    }
+
+    //
+    // Get new and existing build files
+    //
+    const existing_build_files = await Frontend.StaticSiteFileS3.fromListObjectsV2Command(
+        s3_client, Bucket
+      );
+    const new_build_files = await Frontend.StaticSiteFileLocal.fromWalkDirectory(dist);
+
+    const postprocess_updates = await this.runSubtask(
+      "postprocess_updates", {
+        exclude: task.exclude,
+        taskFunction: async () => {
+          if (!quiet)
+            console.log("Postprocessing build...");
+
+          const postprocess_content = Object.fromEntries(
+            Object.entries(
+              await Frontend.buildPostprocess(existing_build_files, new_build_files, options)
+            ).map(
+              ([key, content]) => [key, content.toString()]
+            )
+          );
+
+          let postprocess_size_total = 0;
+
+          const postprocess_sizes = Object.fromEntries(
+              Object.entries(postprocess_content).map(([key, content]) => {
+                postprocess_size_total += content.length;
+                return [key, content.length]
+              })
+            );
+
+          return {
+            postprocess_sizes,
+            postprocess_size_total,
+            postprocess_content
+          };
+        }
+      }
     );
 
-  const force              = parseBoolean(options.force,              false);
-  const enforce_pagination = parseBoolean(options.enforce_pagination, true);
-  const skip_deploy        = parseBoolean(options.skip_deploy,        false);
-  const deploy             = parseBoolean(options.deploy,             !skip_deploy);
-  const clean              = parseBoolean(options.clean,              true);
-  const build              = parseBoolean(options.build,              clean);
-  const quiet              = parseBoolean(options.quiet,              false);
-  const invalidate         = parseBoolean(options.invalidate,         deploy);
+    //
+    // Upload to S3
+    //
+    if ( skip_deploy ) {
+      if (!quiet)
+        console.log("Skipping S3 deployment. Updated static site files:");
 
-  const domain             = options.domain    || DEFAULT_DOMAIN;
-  const Region             = options.Region    || AWS_REGION;
-  const Bucket             = options.Bucket    || options.bucket || BUCKET;
-  const DistributionId     = options.distribution_id || options.DistributionId || DISTRIBUTION_ID;
+      for (let key in postprocess_updates.postprocess_content) {
+        if (!quiet)
+          console.log(" ", key);
+      }
 
-  const s3_client          = options.s3_client         ?? new   S3Client({ Region });
-  const cloudfront_client  = options.cloudfront_client ?? new CloudFront({ Region });
-
-  //
-  // Build
-  //
-  if (build) {
-    if (!quiet) console.log("Building frontend...");
-    if (clean) {
-      await rimraf(dist);
+      return;
     }
-    const result = await hefokiFrontendBuild(dist);
-  }
 
-  //
-  // Get new and existing build files
-  //
-  const existing_build_files = await Frontend.StaticSiteFileS3.fromListObjectsV2Command(
-      s3_client, Bucket
-    );
-  const new_build_files = await Frontend.StaticSiteFileLocal.fromWalkDirectory(dist);
+    await this.runSubtask("deploy", async () => {
+      if ( Object.keys(postprocess_updates.postprocess_content).length === 0 ) {
+        if (!quiet)
+          console.log("No new files or pages to upload to S3");
+        return;
+      }
 
-  if (!quiet)
-    console.log("Postprocessing build...");
+      if (!quiet)
+        console.log("Uploading postprocessed build files to S3...");
 
-  const updates = await Frontend.buildPostprocess(
-    existing_build_files,
-    new_build_files,
-    options
-  );
+      // TODO: instead of this being code in the Frontend logic module, this
+      // should be broken down into subtasks for reporting purposes.
 
-  // Upload to S3
-
-  if ( skip_deploy ) {
-    if (!quiet) console.log("Skipping S3 deployment. Updated static site files:");
-    for (let key in updates) {
-      if (!quiet) console.log(" ", key);
-    }
-    return;
-  }
-  else if ( Object.keys(updates).length === 0 ) {
-    if (!quiet) console.log("No new files or pages to upload to S3");
-  }
-  else {
-    if (!quiet) console.log("Uploading postprocessed build files to S3...");
-    await Frontend.uploadFilesToS3(updates, {
-      ...options,
-      invalidate,
-      DistributionId
+      return await Frontend.uploadFilesToS3(postprocess_updates.postprocess_content, {
+        ...options,
+        invalidate,
+        DistributionId
+      });
     });
   }
 }
+
+
+export default TaskIncrementalBuildAndDeploy;

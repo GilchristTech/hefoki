@@ -741,13 +741,13 @@ export async function uploadFilesToS3 (static_pages, options={}) {
     );
   });
 
-  const upload_results = await Promise.all(upload_promises);
+  const results = {};
+
+  results.upload = await Promise.all(upload_promises);
 
   if ( ! invalidate ) {
-    return {
-      upload_results,
-      invalidation_result: null
-    };
+    results.invalidation = null;
+    return results;
   }
 
   console.log("Starting CloudFront invalidation");
@@ -764,7 +764,7 @@ export async function uploadFilesToS3 (static_pages, options={}) {
   console.log("Performing invalidation on CloudFront distribution with ID:", DistributionId);
   console.log("Invalidation URLs:\n  " + invalidation_urls.join("\n  "));
 
-  const invalidation_result = cloudfront_client.createInvalidation({
+  results.invalidation = cloudfront_client.createInvalidation({
     DistributionId,
     InvalidationBatch: {
       CallerReference: Date.now().toString(),
@@ -775,10 +775,7 @@ export async function uploadFilesToS3 (static_pages, options={}) {
     }
   });
 
-  return {
-    upload_results,
-    invalidation_result
-  };
+  return results;
 }
 
 

@@ -73,3 +73,26 @@ The incremental deployment process is able to be deployed to AWS Lambda with
 the handler exported by `src/lambda.js`. This function calls the scraper to
 update the database, rebuilds the static frontend, incrementally deploys to S3,
 and performs a CloudFront invalidation.
+
+## Tasks, Logic, and Facades
+
+The Hefoki backend attempts to divide its functionality into three types of
+source files:
+
+* **Logic**:     The code which works with data most directly. Individual
+  functions can also read or write to other sources. These should be defined in
+  `src/logic/`.
+
+* **Tasks**:     Classes with a handler that represent a repeated logical
+  action, but should ideally be modular with their data sources and
+  destinations. The class structure makes sure that there is a consistent data
+  structure for logging and metrics. These are defined in `src/tasks/`.
+
+* **Facades**: The code which most directly communicates with a user or
+  external source. The line between this and a task, conceptually, is somewhat
+  blurred, but the main principle is that a facade should coordinate and
+  change the settings of Tasks, and move the Tasks' output to where it needs to
+  go (e.g: logs). A facade is more concerned with the setting in which the
+  code is ran, and where it's communicating, than the nature of the data.
+  Currently, the two facades are the command-line interface and the updater
+  Lambda function. Interfaces are defined in `src/`.

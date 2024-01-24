@@ -24,14 +24,6 @@ cli_frontend_command.command('increment')
   .option('-I, --no-invalidate',  "Do not perform a CloudFront invalidation")
   .action(commandFrontendIncrement);
 
-cli_frontend_command.command('deploy')
-  .description('Deploys a built static site to a destination')
-  .allowExcessArguments(false)
-  .option('--force',              'Overwrites existing files, regardless of modification detection')
-  .option('--pagination [value]', 'Defines whether to check existing or new previous/next links on paginated HTML files', 'true')
-  .option('--build-path <path>',  'Path to write when building the frontend', './dist/')
-  .option('--quiet, -q',          'Suppress output')
-  .option('--bucket',             'Use this bucket to read or upload static site files');
 
 const cli_headlines_command = cli.command('headlines')
   .description('Commands for headlines');
@@ -52,20 +44,23 @@ cli_headlines_command.command('update [urls...]')
 
 
 async function commandHeadlinesUpdate (urls, options) {
-  const runUpdateHeadlines = (await import('./tasks/task-headlines.js')).default;
+  const { TaskUpdateHeadlines } = (await import('./tasks/task-headlines.js'));
   const Headlines = (await import('./logic/headlines.js'));
 
   const dry    = options.dry ?? false;
   const update = !options.dry;
   const quiet  = options.quiet ?? false;
 
-  const updated_headline_days = await runUpdateHeadlines({
+  const update_task = new TaskUpdateHeadlines(null, {
     update, quiet
   });
 
-  const updated_headlines = Headlines.headlineDaysToHeadlineArray(updated_headline_days);
+  const {
+    headline_day_updates,
+    num_headlines
+  } = await update_task.run();
 
-  if (updated_headlines.length == 0) {
+  if (num_headlines == 0) {
     for (let output of options.output) {
       if (output.endsWith(".json")) {
         await Fs.writeFile(output, "{}");
@@ -77,17 +72,16 @@ async function commandHeadlinesUpdate (urls, options) {
 
   for (let output of options.output) {
     if (output.endsWith(".json")) {
-      await Fs.writeFile(output, JSON.stringify(updated_headline_days, null, 2));
+      await Fs.writeFile(output, JSON.stringify(update_task, null, 2));
     }
     else if (output === "-") {
-      console.log(JSON.stringify(updated_headline_days, null, 2));
+      console.log(JSON.stringify(update_task, null, 2));
     }
   }
 }
 
 
 async function commandFrontendIncrement (options) {
-  const runIncrementalBuildAndDeploy = (await import('./tasks/task-frontend.js')).default;
   options = { ...options };
 
   options.dry           ??= false;
@@ -96,7 +90,11 @@ async function commandFrontendIncrement (options) {
   options.build_path      = options.buildPath;
   options.invalidate      = ! options.no_invalidate;
 
-  await runIncrementalBuildAndDeploy(options);
+  const TaskIncrementalBuildAndDeploy = (await import('./tasks/task-frontend.js')).default
+  const update_task = new TaskIncrementalBuildAndDeploy(null, options);
+  const details = await update_task.run();
+
+  console.log(JSON.stringify(update_task, null, 2));
 }
 
 

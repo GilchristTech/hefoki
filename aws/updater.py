@@ -248,6 +248,33 @@ def handleLambda (args):
         S3Key        = "packages/updater.zip"
       )
 
+  if args.invoke:
+    import json
+    lambda_client = boto3.client("lambda")
+
+    response = lambda_client.invoke(
+        FunctionName   = "hefoki-updater",
+        InvocationType = "RequestResponse",
+      )
+
+    print(response)
+    print()
+    response_body = response['Payload'].read().decode('utf-8')
+    response_json = json.loads(response_body)
+    with open("file.json", "w") as fd:
+      json.dump(response_json, fd)
+
+    error = False
+    if 'errorType' in response_json:
+      print(f"{ response_json['errorType'] }: { response.json.get('errorMessage', '') }")
+      error = True
+
+    print(json.loads(response_json))
+    print(json.dumps(response_json, indent=2))
+
+    if error:
+      sys.exit(1)
+
 
 def getCloudFrontDistribution(domain_name="hefoki.today"):
     """
@@ -307,6 +334,7 @@ def main (args=None):
   lambda_parser.add_argument("-b", "--build",  action="store_true")
   lambda_parser.add_argument("-p", "--put",    action="store_true")
   lambda_parser.add_argument("-u", "--update", action="store_true")
+  lambda_parser.add_argument("-i", "--invoke", action="store_true")
 
   lambda_parser.set_defaults(
       func = handleLambda
