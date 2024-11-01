@@ -27,15 +27,30 @@ function getDynamoDBClient (use_client=null) {
 
 
 export default class HeadlinesInterfaceDynamoDB extends HeadlinesInterface {
-  async connect (client, table_name) {
+  async connect (client=null, table_name=null) {
     this.client     = getDynamoDBClient(client);
     this.table_name = table_name || "HefokiHeadlines";
   }
 
+  assertClient () {
+    if (this.client === undefined) {
+      throw "HeadlinesInterfaceDynamoDB.client is undefined. Was this.connect() not ran?"
+    }
+    else if (!this.client) {
+      throw "HeadlinesInterfaceDynamoDB.client is falsey. Was this.connect() not ran?"
+    }
+  }
+
 
   async getHeadlineDays (dates) {
+    this.assertClient();
+
     if (! Array.isArray(dates)) {
       dates = [ dates ];
+    }
+
+    if (dates.length == 0) {
+      return {};
     }
 
     const command = new BatchGetItemCommand({
@@ -60,9 +75,7 @@ export default class HeadlinesInterfaceDynamoDB extends HeadlinesInterface {
 
 
   async updateHeadlineDays (day_headlines) {
-    /*
-      Subclasses should implement.
-    */
+    this.assertClient();
 
     const command = new BatchWriteItemCommand({
       RequestItems: {
