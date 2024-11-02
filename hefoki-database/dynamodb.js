@@ -94,4 +94,34 @@ export default class HeadlinesInterfaceDynamoDB extends HeadlinesInterface {
 
     return await this.client.send(command);
   }
+
+
+  async * iterHeadlineDayPages () {
+    this.assertClient();
+
+    let last_evaluated_key = null;
+
+    do {
+      const command = new ScanCommand({
+        TableName:         this.table_name,
+        ExclusiveStartKey: last_evaluated_key,
+      });
+
+      const scan_output = await this.client.send(command);
+
+      last_evaluated_key = scan_output.LastEvaluatedKey;
+
+      if (!scan_output.Items) {
+        continue;
+      }
+
+      const headline_days = {};
+
+      for (let day_item of scan_output.Items) {
+        headline_days[day_item.Date.S] = JSON.parse(day_item.Data.S);
+      }
+      yield headline_days;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } while (last_evaluated_key);
+  }
 }
