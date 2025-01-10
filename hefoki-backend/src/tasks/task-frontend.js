@@ -1,6 +1,12 @@
 import Task from './task.js';
 
 import * as Frontend from '../logic/frontend.js';
+
+import {
+  StaticSiteFileLocal,
+  StaticSiteFileS3
+} from '../logic/static-site-file.js';
+
 import hefokiFrontendBuild from '@hefoki/frontend';
 
 import Fs from 'fs';
@@ -16,7 +22,7 @@ import {
 
 import 'dotenv/config';
 
-import { parseBoolean } from "./utils.js";
+import { parseBoolean, uploadFilesToS3 } from "./utils.js";
 
 
 const DEFAULT_DIST    = "dist";
@@ -95,10 +101,10 @@ export class TaskIncrementalBuildAndDeploy extends Task {
     //
     // Get new and existing build files
     //
-    const existing_build_files = await Frontend.StaticSiteFileS3.fromListObjectsV2Command(
+    const existing_build_files = await StaticSiteFileS3.fromListObjectsV2Command(
         s3_client, Bucket
       );
-    const new_build_files = await Frontend.StaticSiteFileLocal.fromWalkDirectory(dist);
+    const new_build_files = await StaticSiteFileLocal.fromWalkDirectory(dist);
 
     const postprocess_updates = await this.runSubtask(
       "postprocess_updates", {
@@ -109,7 +115,7 @@ export class TaskIncrementalBuildAndDeploy extends Task {
 
           const postprocess_content = Object.fromEntries(
             Object.entries(
-              await Frontend.buildPostprocess(existing_build_files, new_build_files, options)
+              await Frontend.incrementBetweenBuilds(existing_build_files, new_build_files, options)
             ).map(
               ([key, content]) => [key, content.toString()]
             )
@@ -161,7 +167,7 @@ export class TaskIncrementalBuildAndDeploy extends Task {
       // TODO: instead of this being code in the Frontend logic module, this
       // should be broken down into subtasks for reporting purposes.
 
-      return await Frontend.uploadFilesToS3(postprocess_updates.postprocess_content, {
+      return await uploadFilesToS3(postprocess_updates.postprocess_content, {
         ...options,
         invalidate,
         DistributionId

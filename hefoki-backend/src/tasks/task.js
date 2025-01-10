@@ -22,7 +22,7 @@ export default class Task {
 
     this.exclude    = new Set(task.exclude) ?? new Set();
 
-    this.promise     = null;
+    this.promise    = null;
 
     if (task.taskFunction) {
       this.taskFunction = task.taskFunction;

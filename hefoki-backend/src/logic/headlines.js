@@ -1,6 +1,44 @@
 import deepEqual from 'deep-equal';
 
+/*
+  This file defines functions for working with sets of headline
+  data, either in arrays, or headline_days, which are and
+  key-value maps of their dates and arrays of them.
 
+  Specifically, it defines converter functions between these two
+  formats, "matcher" functions for them, and diff functions for
+  them.
+
+  These matcher functions are written to match simple traits
+  between headlines, but can then be combined to form more
+  sophisiticated matching logic.
+
+  Notably, in this context, matches are NOT equal. With two
+  headlines having different data, but no ID to confirm they
+  refer to the same thing, they need to be matched for
+  similarity. This is done by a series of checks. For example,
+  stories with the same title refer to the same story, but if
+  that title is modified, it may be the same story if one of the
+  external source URLs is the same, even if one is added.
+
+  Matcher functions take two arrays of headlines as arguments,
+  `headlines_a` and `headlines_b`, and returns an object which
+  contains:
+    "matched":     A headline array of headlines
+                   which matched the criteria.
+    "unmatched_a": A headline array of unmatched
+                   elements from headlines_a.
+    "unmatched_b": A headline array of unmatched
+                   elements from headlines_b.
+*/
+
+
+/*
+  headlineArrayToHeadlineDays (headlines_array)
+
+  Given an array of headlines, return them as a key-value
+  mapping of dates to arrays of headlines.
+*/
 export function headlineArrayToHeadlineDays (headlines_array) {
   const headline_days = {};
   
@@ -16,6 +54,12 @@ export function headlineArrayToHeadlineDays (headlines_array) {
 }
 
 
+/*
+  headlineDaysToHeadlineArray (headline_days_map)
+
+  Given a key-value mapping of dates to arrays of headlines,
+  return a flat array of headlines.
+*/
 export function headlineDaysToHeadlineArray (headline_days) {
   return Object.values(headline_days).reduce(
     (headlines, headline_day) => headlines.concat(headline_day),
@@ -24,12 +68,28 @@ export function headlineDaysToHeadlineArray (headline_days) {
 }
 
 
+/*
+  headlinesMatchExternalLinks (headlines_a_array, headlines_b_array)
+
+  Given two arrays of headlines, return an object containing
+  which have matching sets of external links, and which are
+  unmatched from each set.
+
+  Returns an object: {
+    matched_headlines_array,
+    unmatched_headlines_a_array,
+    unmatched_headlines_b_array
+  }
+*/
 export function headlinesMatchExternalLinks (headlines_a, headlines_b) {
   const matched     = [];
   const unmatched_b = [];
 
   headlines_a = Array.from(headlines_a);  // shallow copy, we'll delete elements
 
+  // Loop through combinations of headlines from headlines_a and
+  // headlines_b. 
+  
   LOOP_B:
   for (let headline_bi in headlines_b) {
     const headline_b     = headlines_b[headline_bi];

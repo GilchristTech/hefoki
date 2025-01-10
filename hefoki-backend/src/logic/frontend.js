@@ -1,286 +1,6 @@
-import hefokiFrontendBuild from '@hefoki/frontend';
-
-import { rimraf } from 'rimraf';
-import Mime       from 'mime-types';
 import Cheerio    from 'cheerio';
-import * as Luxon from 'luxon';
-import Crypto     from 'crypto';
-import Path       from 'path';
-import Fs         from 'fs';
 
-import {
-  S3Client,
-  GetObjectCommand, PutObjectCommand,
-  ListObjectsV2Command
-} from '@aws-sdk/client-s3';
-
-import { CloudFront } from '@aws-sdk/client-cloudfront';
-
-
-const DEFAULT_DIST = "dist";
-const AWS_REGION   = process.env.AWS_REGION || "us-west-2";
-const BUCKET       = process.env.BUCKET     || "hefoki-public";
-
-const DEFAULT_DOMAIN   = "hefoki.today";
-const ETAG_MD5_RGX     = /"?([0-9a-f]{32})"?/;
 const DATE_URL_KEY_RGX = /^\/?(\d{4}-\d{2}-[0-3][0-9])\//;
-
-
-export class StaticSiteFile {
-  constructor (object={}) {
-    // Resource key - for static sites, a path relative to the root of the
-    // build, not including a leading slash. Also calculate the key_directory
-    // and key_filename. The directory should include a trailing slash, and
-    // simple concatination with key_filename should result in the exact
-    // resource key
-
-    if (typeof object.key !== "string")
-      throw TypeError(`key isn't a string: ${object.key}`);
-
-    this.key = object.key || object.resource_key;
-
-    this.key_separator    = object.key_separator ?? "/";
-    const key_fname_index = this.key.lastIndexOf(this.key_separator) + 1;
-    this.key_directory    = this.key.slice(0, key_fname_index);
-    this.key_filename     = this.key.slice(key_fname_index);
-
-    // Locator - An implementation-agnostic string which can be resolved to
-    // this resource.
-
-    if (object.locator === null || object.locator === undefined) {
-      this.locator           = null;
-      this.locator_separator = null;
-      this.locator_prefix    = null;
-    }
-    else if (typeof object.locator !== "string") {
-      throw new TypeError("locator is not a string or null");
-    }
-    else {
-      this.locator           = object.locator;
-      this.locator_separator = object.locator_separator ?? "/";
-
-      if (object.locator_prefix) {
-        this.locator_prefix = object.locator_prefix;
-      }
-      else if (this.locator.endsWith(this.key)) {
-        this.locator_prefix = this.locator.slice(0, -this.key.length);
-      }
-      else {
-        this.locator_prefix = null;
-      }
-    }
-
-    this.mimetype  = object.mimetype ?? Mime.lookup(this.key_name);
-    this.__content = object.content  ?? null;
-    this.__hash    = object.hash     ?? null;
-    this.modified  = false;
-  }
-
-  static localizePath (global_path, prefix="") {
-    /*
-      Return a path after a given prefix within a global path
-
-      For most static site implementations, it can be useful to have a means of
-      resolving the relative location between the root of a resource medium
-      (such as a filesystem, URI, or S3 bucket), with the root location of the
-      build within that medium.
-    */
-
-    if (prefix.length > global_path.length)
-      throw TypeError("Global path cannot be shorter than prefix");
-
-    const prefix_index = path.indexOf(prefix);
-
-    if (prefix_index === -1)
-      throw TypeError(`Prefix not found: ${prefix}`);
-
-    const localized = path.slice(prefix_index + prefix.length);
-    return localized;
-  }
-
-  async content () {
-    return await this.__content;
-  }
-
-  async setContent (new_content) {
-    this.__content  = new_content;
-    this.__hash     = null;
-    this.modified   = false;
-  }
-
-  async read () {
-    return await this.content();
-  }
-
-  async write (content = null) {
-    this.setContent(content ?? this.__content);
-    this.modified = false;
-    return this.__content;
-  }
-
-  async hash () {
-    if (this.__hash)
-      return this.__hash;
-
-    const content = await this.content();
-    return this.__hash = Crypto.createHash('md5').update(content).digest('hex');
-  }
-}
-
-
-export class StaticSiteFileLocal extends StaticSiteFile {
-  constructor (locator, key, object={}) {
-    // Normalize paths
-    locator = Path.resolve(locator);
-
-    const locator_prefix = object.locator_prefix ?? locator.slice(
-        0, -key.length
-      );
-
-    if ( locator_prefix && !locator.startsWith(locator_prefix) ) {
-      throw new TypeError("locator does not start with locator_prefix");
-    }
-
-    super({
-      ...object,
-      locator,
-      key,
-      locator_prefix,
-    });
-  }
-
-  async content () {
-    if (this.__content === null) {
-      this.__content = Fs.promises.readFile(this.locator);
-    }
-    return await this.__content;
-  }
-
-  async write(content = null) {
-    content = await super.write(content);
-    await Fs.promises.writeFile(this.resource_path, content);
-    return content;
-  }
-
-  static async * fromWalkDirectoryIter (locator_prefix, key_directory="") {
-    /*
-      Recursive async generator for walking static site directories.
-
-      The directory becomes the locator_prefix of the StaticSiteFileLocal objects.
-      The key_directory accumulates directories within the build, as the method recurses
-    */
-
-    // Normalize paths into absolutes with trailing slashes, and assert we're
-    // looking at a directory
-
-    locator_prefix = Path.resolve(locator_prefix);
-    if (locator_prefix.at(-1) !== "/") {
-      locator_prefix += "/";
-    }
-    if (! (await Fs.promises.lstat(locator_prefix)).isDirectory()) {
-      throw new TypeError(`Expected directory: ${locator_prefix}`);
-    }
-
-    // Walk files and directories
-
-    for await (let dirent of await Fs.promises.opendir(locator_prefix + key_directory)) {
-      let path = dirent.path + dirent.name;
-      if (dirent.isDirectory()) {
-        yield * StaticSiteFileLocal.fromWalkDirectoryIter(
-          locator_prefix,
-          `${key_directory}${dirent.name}/`
-        );
-      }
-      else {
-        yield new StaticSiteFileLocal(path, key_directory + dirent.name);
-      }
-    }
-  }
-
-  static async fromWalkDirectory (locator_prefix, key_directory="") {
-    let files = [];
-    for await (let file of StaticSiteFileLocal.fromWalkDirectoryIter(locator_prefix, key_directory)) {
-      files.push(file);
-    }
-    return files;
-  }
-}
-
-
-export class StaticSiteFileS3 extends StaticSiteFile {
-  constructor (s3_client, aws_object={}, file_object={}) {
-    let hash;
-    if (aws_object.Hash) {
-      const hash_match = object.ETag.match(ETAG_MD5_RGX);
-
-      if (hash_match === null) {
-        throw TypeError(`Could not find an MD5 hash in ETag: ${hash_match.ETag}`);
-      }
-    }
-    else {
-      hash = file_object.hash ?? null;
-    }
-
-    super({
-      ...file_object,
-      hash,
-      locator: aws_object.Key ?? file_object.key,
-    });
-
-    const bucket = aws_object.Bucket || aws_object.bucket;
-    if (!bucket)
-      throw TypeError("Bucket isn't truthy");
-    this.bucket = aws_object.Bucket;
-    this.s3_client = s3_client;
-  }
-
-  async content () {
-    if (this.__content == null) {
-      this.__content = (async () => {
-        // Arrow function used to preserve `this`
-        const download_result = await this.s3_client.send(
-          new GetObjectCommand({ Bucket: this.bucket, Key: this.locator })
-          );
-        return await download_result.Body.transformToString();
-      })();
-    }
-
-    return await this.__content;
-  }
-
-  static async fromListObjectsV2Command (s3_client, Bucket, Prefix="", aws_options={}) {
-    // Query and filter for static site files in the S3 bucket
-
-    const results = await s3_client.send(
-      new ListObjectsV2Command({
-        Bucket,
-        Prefix,
-        ...aws_options
-      })
-    );
-
-    const objects = results.Contents;
-
-    return StaticSiteFileS3.fromListObjectResults(s3_client, Bucket, objects, Prefix);
-  }
-
-  static fromListObjectResults (s3_client, Bucket, objects, prefix="") {
-    const ssg_files = new Array(objects.length);
-
-    for (let i in objects) {
-      const object = objects[i];
-      ssg_files[i] = new StaticSiteFileS3(
-        s3_client,
-        { Bucket, ...object },
-        { key: object.Key.slice(prefix.length),
-          locator_prefix: prefix,
-        }
-      );
-    }
-
-    return ssg_files;
-  }
-}
 
 
 export function mergeIndexedArrays (indexes_a, indexes_b, values_a=null, values_b=null) {
@@ -404,9 +124,12 @@ export function updatePagination (html, pagination, find_prev=null, find_next=nu
     find paginated links and update them, then return the resultant HTML. If
     pagination.next or pagination.prev are falsey, skip updating them.
 
-    The Cheerio search functions to find the pagination links can be overridden,
-    but default to functions which, given Cheerio object, query for anchor
-    elements with the .next and .prev attributes.
+    The Cheerio search functions to find the pagination links can
+    be overridden with `find_prev` and `find_next`. Their default
+    values are functions which given a Cheerio object, query for
+    anchor elements with .next and .prev attributes. Those look
+    like this:
+      ( $ => $('a.prev') )
   */
 
   find_prev ??= ($ => $('a.prev'));
@@ -526,18 +249,19 @@ export function normalizeKeyToUrl (key) {
 }
 
 
-export async function buildPostprocess (old_files, new_files, options={}) {
+export async function incrementBetweenBuilds (old_files, new_files, options={}) {
   /*
-    Build static site, then compare the files with those in the existing static
-    site public bucket. Upload updated and new files. For paginated links, edit
-    their HTML before uploading to ensure evailable paginated links, and to
-    download and do the same for old paginated links where needed.
+    Given `old_files` (an array of StaticSiteFiles), and
+    `new_files`, calcuate content changes to those files for
+    repagination and determine which pages are updates. Returns a
+    mapping between file keys of which which StaticSiteFiles are
+    updates, and their contents.
   */
 
   const force              = options.force              ?? false;
   const enforce_pagination = options.enforce_pagination ?? true;
 
-  // Query and filter for existing date-paginated pages in the S3 bucket, and
+  // Filter for existing date-paginated pages in `old_files`, and
   // put them into a dict indexed by date.
 
   const existing_objects   = {};
@@ -558,7 +282,7 @@ export async function buildPostprocess (old_files, new_files, options={}) {
   }
 
   //
-  // For the new SSG build, walk through files, filter for pages paginated by
+  // For `new_files`, filter for pages paginated by
   // date, and add them to a dict, indexed by the date.
   //
   // Put all other build output files into static_pages, indexed by URL key,
@@ -600,7 +324,7 @@ export async function buildPostprocess (old_files, new_files, options={}) {
   // updates in that set of files.
 
   for (let merge of merged) {
-    // There are various causes for which a page may be deployed. The most
+    // There are various causes for which a page may be an update. The most
     // obvious is that there simply is a new page, but there are other cases we
     // need to detect in pages where both a newly-generated and old page exist.
     // A page may also be updated because its content hash is different than
@@ -635,18 +359,29 @@ export async function buildPostprocess (old_files, new_files, options={}) {
   }
 
   if (enforce_pagination) {
+
     for (let merge_entry of merged) {
-      // Get a StaticSiteFile from the merge_entry, prioritizing the B value.
-      // At least one of these values should be truthy, so this should evaluate
-      // to one of them, or else mergeIndexedArrays has a bug.
+
+      // Get a StaticSiteFile from the merge_entry, prioritizing
+      // the B (new_files) value. At least one of these values
+      // should be truthy, so this should evaluate to one of
+      // them, or else mergeIndexedArrays has a bug.
+      //
       const page       = merge_entry.value_b || merge_entry.value_a;
       const pagination = getPagination(await page.content());
-      const next_links = Array.from(new Set(pagination.next.map(normalizeUrlToKey).filter(x => x != null)));
-      const prev_links = Array.from(new Set(pagination.prev.map(normalizeUrlToKey).filter(x => x != null)));
+
+      const next_links = Array.from( new Set(
+        pagination.next.map(normalizeUrlToKey).filter(x => x != null)
+      ));
+
+      const prev_links = Array.from(new Set(
+        pagination.prev.map(normalizeUrlToKey).filter(x => x != null)
+      ));
 
       // Get the next and previous cannonical page links from the merge_entry,
       // and normalize indices into static site build keys (ie: they include
       // index.html)
+
       let prev_href = merge_entry.prev && normalizeUrlToKey(merge_entry.prev);
       let next_href = merge_entry.next && normalizeUrlToKey(merge_entry.next);
 
@@ -695,6 +430,7 @@ export async function buildPostprocess (old_files, new_files, options={}) {
     const page             = merge_entry.value_b || merge_entry.value_a;
     const original_content = await page.content();
     let   content          = original_content;
+
     if (enforce_pagination || merge_entry.is_pagination_update) {
       content = updatePagination(content, merge_entry);
     }
@@ -717,77 +453,4 @@ export async function buildPostprocess (old_files, new_files, options={}) {
   }
 
   return static_pages;
-}
-
-
-export async function uploadFilesToS3 (static_pages, options={}) {
-  /*
-    Given a dict of static pages, where their indexes are object keys, and the
-    values are the page content, upload each as an object to S3.
-  */
-
-  const Bucket = options.Bucket ??     BUCKET;
-  const Region = options.Region ?? AWS_REGION;
-
-  const s3_client      = options.s3_client ?? new S3Client({ Region });
-  const domain         = options.domain || DEFAULT_DOMAIN;
-  const invalidate     = options.invalidate ?? true;
-
-  const upload_promises = Object.entries(static_pages).map(async ([Key, Body]) => {
-    console.log(`put: ${Bucket}/${Key} (${(Body.length/1024).toFixed(1)}kb)`);
-    const ContentType = Mime.lookup(Key);
-    return await s3_client.send(
-      new PutObjectCommand({ Bucket, Key, Body, ContentType })
-    );
-  });
-
-  const results = {};
-
-  results.upload = await Promise.all(upload_promises);
-
-  if ( ! invalidate ) {
-    results.invalidation = null;
-    return results;
-  }
-
-  console.log("Starting CloudFront invalidation");
-
-  let cloudfront_client   = options.cloudfront_client ?? new CloudFront({ Region });
-  const invalidation_urls = Object.keys(static_pages).map(key => "/" + key);
-  let DistributionId      = ( options.distribution_id || options.DistributionId );
-
-  if ( ! DistributionId ) {
-    console.log("Looking for distribution DistributionId...");
-    DistributionId = await getCloudfrontDistributionId(cloudfront_client, domain);
-  }
-
-  console.log("Performing invalidation on CloudFront distribution with ID:", DistributionId);
-  console.log("Invalidation URLs:\n  " + invalidation_urls.join("\n  "));
-
-  results.invalidation = cloudfront_client.createInvalidation({
-    DistributionId,
-    InvalidationBatch: {
-      CallerReference: Date.now().toString(),
-      Paths: {
-        Quantity: invalidation_urls.length,
-        Items:    invalidation_urls
-      }
-    }
-  });
-
-  return results;
-}
-
-
-export async function getCloudfrontDistributionId (client=null, domain=null) {
-  domain ||= DEFAULT_DOMAIN;
-  client ??= new CloudFront();
-  const result = await client.listDistributions({});
-
-  for (let distribution of result.DistributionList.Items) {
-    if (distribution?.Aliases?.Items?.includes(domain))
-      return distribution.Id;
-  }
-
-  throw new Error(`Couldn't find CloudFront distribution with domain: ${domain}`);
 }

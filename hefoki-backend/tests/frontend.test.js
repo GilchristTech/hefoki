@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import * as Frontend from '../src/logic/frontend.js';
+import { StaticSiteFile } from '../src/logic/static-site-file.js';
 import * as Fixtures from './fixtures.js';
 
 import { DateTime } from 'luxon';
 import Cheerio      from 'cheerio';
 
 
-describe("mergeIndexedArrays", () => {
+describe("mergeIndexedArrays()", () => {
   it("links lists", () => {
     const merged = Frontend.mergeIndexedArrays(
       [  1,2,3  ],
@@ -58,7 +59,7 @@ describe("mergeIndexedArrays", () => {
 });
 
 
-describe("normalizeKeyToUrl", () => {
+describe("normalizeKeyToUrl()", () => {
   const normalizeKeyToUrl = Frontend.normalizeKeyToUrl;
 
 
@@ -71,7 +72,7 @@ describe("normalizeKeyToUrl", () => {
 });
 
 
-describe("updatePagination", () => {
+describe("updatePagination()", () => {
   it("doesn't modify pagination if provided an empty pagination dict", () => {
     const old_html       = Fixtures.generateHtmlPaginated('2023-11-01', null, '/2023-11-02/');
     const new_html       = Frontend.updatePagination(old_html, {});
@@ -93,49 +94,49 @@ describe("updatePagination", () => {
 });
 
 
-describe("buildPostprocess", () => {
-  it("passes through empty input", async () => {
+describe("incrementBetweenBuilds()", () => {
+  it("does nothing when given no files", async () => {
     const old_files = [];
     const new_files = [];
-    const pages = await Frontend.buildPostprocess([], []);
+    const pages = await Frontend.incrementBetweenBuilds([], []);
     expect(pages).toEqual({});
   });
 
-  it("passes through new files", async () => {
+  it("returns unmodified input when only given new files", async () => {
     const old_files = [];
     const new_files = [
-      new Frontend.StaticSiteFile({
+      new StaticSiteFile({
         key:     'index.html',
         content: Fixtures.html.plain + ""
       })
     ];
-    const pages = await Frontend.buildPostprocess(old_files, new_files);
+    const pages = await Frontend.incrementBetweenBuilds(old_files, new_files);
 
     expect(pages).toEqual({
       'index.html': Fixtures.html.plain
     });
   });
 
-  it("doesn't copy old unmodified files", async () => {
+  it("doesn't return old unmodified files", async () => {
     const old_files = [
-      new Frontend.StaticSiteFile({
+      new StaticSiteFile({
         key:     'index.html',
         content: Fixtures.html.plain + ""
       })
     ];
     const new_files = [];
-    const pages = await Frontend.buildPostprocess(old_files, new_files);
+    const pages = await Frontend.incrementBetweenBuilds(old_files, new_files);
     expect(pages).toEqual({});
   });
 
-  it("copy old unmodified files, if forced", async () => {
+  it("returns old unmodified files, if forced", async () => {
     const old_files = [
-      new Frontend.StaticSiteFile({
+      new StaticSiteFile({
         key:     'index.html',
         content: Fixtures.html.plain + ""
       })
     ];
-    const pages = await Frontend.buildPostprocess(
+    const pages = await Frontend.incrementBetweenBuilds(
         old_files, [], {force: true}
       );
     expect(pages).toEqual({
@@ -143,14 +144,14 @@ describe("buildPostprocess", () => {
     });
   });
 
-  describe("adjacent date-indexed page sets", () => {
+  describe("when given adjacent date-indexed page sets...", () => {
     it("only returns modified or new pages", async () => {
       function generatePage (day_index, prev, next) {
         const key  = `${day_index}/index.html`;
         const html = Fixtures.generateHtmlPaginated(day_index, prev, next);
         return {
           key, html,
-          page: new Frontend.StaticSiteFile({ key, content: html })
+          page: new StaticSiteFile({ key, content: html })
         };
       }
 
@@ -164,7 +165,7 @@ describe("buildPostprocess", () => {
           generatePage('2023-11-05', '2023-11-04/', null         )
       ];
 
-      const static_pages = await Frontend.buildPostprocess(
+      const static_pages = await Frontend.incrementBetweenBuilds(
         days_a.map(p => p.page), days_b.map(p => p.page)
       );
 
@@ -179,22 +180,22 @@ describe("buildPostprocess", () => {
     });
   });
 
-  describe("pagination enforcement", () => {
+  describe("enforces pagination because it...", () => {
     it("fixes incorrect pagination links", async () => {
       // Correct pagination, no modifications needed
       const page_a_content = Fixtures.generateHtmlPaginated('2023-11-01', null, '/2023-11-03/');
-      const page_a = new Frontend.StaticSiteFile({
+      const page_a = new StaticSiteFile({
         key: `2023-11-01/index.html`,
         content: page_a_content,
       });
 
       // Previous page does not exist, should have pagination updated
-      const page_b = new Frontend.StaticSiteFile({
+      const page_b = new StaticSiteFile({
         key: `2023-11-03/index.html`,
         content: Fixtures.generateHtmlPaginated('2023-11-03', '/2023-11-02/', null)
       });
 
-      const updates = await Frontend.buildPostprocess(
+      const updates = await Frontend.incrementBetweenBuilds(
         [page_a], [page_b], { enforce_pagination: true }
       );
       
@@ -206,17 +207,17 @@ describe("buildPostprocess", () => {
     });
 
     it("preserves leading hyperlink slashes", async () => {
-      const page_a = new Frontend.StaticSiteFile({
+      const page_a = new StaticSiteFile({
         key: `2023-11-01/index.html`,
         content: Fixtures.generateHtmlPaginated('2023-11-01', null, '/2023-11-02/')
       });
 
-      const page_b = new Frontend.StaticSiteFile({
+      const page_b = new StaticSiteFile({
         key: `2023-11-02/index.html`,
         content: Fixtures.generateHtmlPaginated('2023-11-02', '/2023-11-01/', null)
       });
 
-      const updates = await Frontend.buildPostprocess(
+      const updates = await Frontend.incrementBetweenBuilds(
         [page_a], [page_b], { enforce_pagination: true, force: true }
       );
       
@@ -244,20 +245,20 @@ describe("buildPostprocess", () => {
     });
   });
 
-  describe("Update detection", () => {
-    it("doesn't upload new files if a new-page pagination update causes it to match an old file, unless forced", async () => {
+  describe("correctly performs updates because it...", () => {
+    it("doesn't update new files when a new-page pagination update causes that file to match with an old file, unless forced", async () => {
       const page_a_content     = Fixtures.generateHtmlPaginated('2023-11-01',          null, '/2023-11-02/');
       const page_b_old_content = Fixtures.generateHtmlPaginated('2023-11-02', '/2023-11-01/',          null);
       const page_b_new_content = Fixtures.generateHtmlPaginated('2023-11-02',          null,           null);
 
-      const page_a_old = new Frontend.StaticSiteFile({ key: '2023-11-01/index.html', content: page_a_content     });
-      const page_b_old = new Frontend.StaticSiteFile({ key: '2023-11-02/index.html', content: page_b_old_content });
-      const page_b_new = new Frontend.StaticSiteFile({ key: '2023-11-02/index.html', content: page_b_new_content });
+      const page_a_old = new StaticSiteFile({ key: '2023-11-01/index.html', content: page_a_content     });
+      const page_b_old = new StaticSiteFile({ key: '2023-11-02/index.html', content: page_b_old_content });
+      const page_b_new = new StaticSiteFile({ key: '2023-11-02/index.html', content: page_b_new_content });
 
       // Detect that the pages, following forced
       // postprocessing, have not changed.
       //
-      const updates_forced = await Frontend.buildPostprocess(
+      const updates_forced = await Frontend.incrementBetweenBuilds(
         [ page_a_old, page_b_old ], [ page_b_new ], { enforce_pagination: true, force: true }
       );
 
@@ -270,7 +271,7 @@ describe("buildPostprocess", () => {
       // content and hash equal that of the existing (old) page. In this case,
       // no update should be performed.
       //
-      const updates = await Frontend.buildPostprocess(
+      const updates = await Frontend.incrementBetweenBuilds(
         [ page_a_old, page_b_old ], [ page_b_new ], { enforce_pagination: true }
       );
       expect(updates).toEqual({});
